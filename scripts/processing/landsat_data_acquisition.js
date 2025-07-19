@@ -11,7 +11,7 @@ Resolution: 30m
 */
 
 // Define the area of interest (AOI)
-var aoi = ee.FeatureCollection("projects/ee-jannisgruber/assets/AMB_Municipalities").geometry();
+var aoi = ee.FeatureCollection("projects/ee-jannisgruber/assets/AMB_Municipalities").geometry(); // Upload the shapefile and change the location
 
 // Configuration
 var CLOUD_COVER_THRESHOLD = 50;
@@ -129,10 +129,11 @@ Usage Instructions:
 ==================
 
 1. Copy this code into Google Earth Engine Code Editor
-2. Run the script - it will export all years automatically
-3. Download the exported files from Google Drive
-4. Place the downloaded .tif files in the data/raw/ folder
-5. Files should be named: 1998.tif, 1999.tif, ..., 2025.tif
+2. Update the AOI file location
+3. Run the script - it will export all years automatically
+4. Download the exported files from Google Drive
+5. Place the downloaded .tif files in the data/raw/ folder
+6. Files should be named: 1998.tif, 1999.tif, ..., 2025.tif
 
 Expected Output:
 - Files: 1984.tif through 2025.tif
