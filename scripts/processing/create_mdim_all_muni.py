@@ -13,7 +13,7 @@ BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
 OUTPUT_FILE_NAME = "mdim_2012_2022.nc"
-START_YEAR = 2015   # Set to None to use config file value
+START_YEAR = 2000   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = 2       # Set to None to use config file value
 # ================================
@@ -50,30 +50,6 @@ def load_config(config_path=CONFIG_PATH):
         return yaml.safe_load(f)
 
 
-def normalize_and_safe_filename(text):
-    """Normalize text and create safe filename in one step."""
-    if not text:
-        return "", "", "unknown"
-    
-    # Normalize unicode
-    normalized = unicodedata.normalize('NFKD', text)
-    no_accents = ''.join(c for c in normalized if not unicodedata.combining(c))
-    
-    # Create safe filename
-    safe = text.replace(" ", "_")
-    safe = re.sub(r'[àáâãäåæ]', 'a', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[èéêë]', 'e', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[ìíîï]', 'i', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[òóôõö]', 'o', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[ùúûü]', 'u', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[ç]', 'c', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[ñ]', 'n', safe, flags=re.IGNORECASE)
-    safe = re.sub(r"['\-]", '', safe, flags=re.IGNORECASE)
-    safe = re.sub(r'[^a-zA-Z0-9_]', '', safe)
-    
-    return normalized, no_accents, safe
-
-
 def load_municipalities(boundaries_path):
     """Load all municipalities from shapefile."""
     logger.info(f"Loading municipalities from: {boundaries_path}")
@@ -91,11 +67,6 @@ def load_municipalities(boundaries_path):
     if not name_col:
         raise ValueError(f"Could not find name column in {list(gdf.columns)}")
     gdf['municipality_name'] = gdf[name_col]
-    for idx, name in enumerate(gdf[name_col]):
-        if name:
-            _, no_accents, safe = normalize_and_safe_filename(str(name))
-            gdf.loc[idx, 'normalized_name'] = no_accents
-            gdf.loc[idx, 'safe_name'] = safe
     return gdf
 
 
@@ -203,16 +174,16 @@ def calculate_ndvi(combined_ds):
 def classify_ndvi(ndvi):
     """Classify NDVI into 6 categories."""
     logger.info("Classifying NDVI values into 6 categories...")
-    
+
     ndvi_class = xr.zeros_like(ndvi, dtype='int8')
-    
+
     for i, (min_val, max_val) in enumerate(NDVI_THRESHOLDS):
         if i == len(NDVI_THRESHOLDS) - 1:  # Last class includes upper bound
             mask = (ndvi >= min_val) & (ndvi <= max_val)
         else:
             mask = (ndvi >= min_val) & (ndvi < max_val)
         ndvi_class = xr.where(mask, i, ndvi_class)
-    
+
     # Handle NoData
     ndvi_class = ndvi_class.where(~ndvi.isnull(), -1)
     
@@ -222,7 +193,6 @@ def classify_ndvi(ndvi):
         count = int((ndvi_class == i).sum())
         logger.info(f"  Class {i}: {count} pixels - {name}")
     logger.info(f"  NoData (-1): {int((ndvi_class == -1).sum())} pixels")
-    
     return ndvi_class.astype('int8')
 
 
@@ -322,13 +292,12 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     # Save dataset
     processed_data_path.mkdir(parents=True, exist_ok=True)
     output_file = processed_data_path / OUTPUT_FILE_NAME
-    logger.info(f"Saving dataset to: {output_file}")
 
     encoding = {var: {'zlib': True, 'complevel': 1} for var in BAND_NAMES + ['ndvi', 'ndvi_class', 'municipality_id']}
     combined_ds.to_netcdf(output_file, engine='netcdf4', encoding=encoding)
     
     # Save municipality mapping
-    municipality_info = boundaries_gdf[['municipality_name', 'safe_name']].copy()
+    municipality_info = boundaries_gdf['municipality_name'].copy()
     municipality_info['municipality_id'] = range(1, len(municipality_info) + 1)
     municipality_info_file = processed_data_path / "municipality_mapping.csv"
     municipality_info.to_csv(municipality_info_file, index=False, encoding='utf-8')
