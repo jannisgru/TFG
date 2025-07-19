@@ -105,11 +105,9 @@ def create_3d_raster_layers(ds, output_dir=OUTPUT_DIR, output_name=OUTPUT_NAME, 
             colorscale=colorscale,
             cmin=zmin,
             cmax=zmax,
-            opacity=0.8,
             showscale=False,
             name=f'Year {year}',
-            hovertemplate=(f'Year: {year}<br>X: %{{x:.4f}}<br>'
-                          f'Y: %{{y:.4f}}<br>{title_suffix}: %{{surfacecolor:.3f}}<extra></extra>')
+            hovertemplate=(f'Year: {year}<br>X: %{{x:.4f}}<br>Y: %{{y:.4f}}<br><extra></extra>')
         ))
     
     fig.update_layout(
