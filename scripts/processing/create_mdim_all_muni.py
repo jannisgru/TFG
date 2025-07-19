@@ -18,9 +18,7 @@ END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = 2       # Set to None to use config file value
 # ================================
 
-import re
 import warnings
-import unicodedata
 import numpy as np
 import pandas as pd
 import xarray as xr
