@@ -1,0 +1,50 @@
+Total: 45 municipalities
+
+ 1. Badalona
+ 2. Badia del Vallès
+ 3. Barberà del Vallès
+ 4. Begues
+ 5. Castellbisbal
+ 6. Castelldefels
+ 7. Cerdanyola del Vallès
+ 8. Cervelló
+ 9. Ciutat Vella
+10. Corbera de Llobregat
+11. Cornellà de Llobregat
+12. El Papiol
+13. El Prat de Llobregat
+14. Esplugues de Llobregat
+15. Gavà
+16. Gràcia
+17. Horta - Guinardó
+18. Hospitalet de Llobregat
+19. L'Eixample
+20. La Palma de Cervelló
+21. Les Corts
+22. Molins de Rei
+23. Montcada i Reixac
+24. Montgat
+25. Nou Barris
+26. Pallejà
+27. Ripollet
+28. Sant Adrià del Besòs
+29. Sant Andreu
+30. Sant Andreu de la Barca
+31. Sant Boi de Llobregat
+32. Sant Climent de Llobregat
+33. Sant Cugat del Vallès
+34. Sant Feliu de Llobregat
+35. Sant Joan Despí
+36. Sant Just Desvern
+37. Sant Martí
+38. Sant Vicenç dels Horts
+39. Santa Coloma de Cervelló
+40. Santa Coloma de Gramenet
+41. Sants-Montjuic
+42. Sarrià - Sant Gervasi
+43. Tiana
+44. Torrelles de Llobregat
+45. Viladecans
+
+Comma-separated:
+Badalona, Badia del Vallès, Barberà del Vallès, Begues, Castellbisbal, Castelldefels, Cerdanyola del Vallès, Cervelló, Ciutat Vella, Corbera de Llobregat, Cornellà de Llobregat, El Papiol, El Prat de Llobregat, Esplugues de Llobregat, Gavà, Gràcia, Horta - Guinardó, Hospitalet de Llobregat, L'Eixample, La Palma de Cervelló, Les Corts, Molins de Rei, Montcada i Reixac, Montgat, Nou Barris, Pallejà, Ripollet, Sant Adrià del Besòs, Sant Andreu, Sant Andreu de la Barca, Sant Boi de Llobregat, Sant Climent de Llobregat, Sant Cugat del Vallès, Sant Feliu de Llobregat, Sant Joan Despí, Sant Just Desvern, Sant Martí, Sant Vicenç dels Horts, Santa Coloma de Cervelló, Santa Coloma de Gramenet, Sants-Montjuic, Sarrià - Sant Gervasi, Tiana, Torrelles de Llobregat, Viladecans

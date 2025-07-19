@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Data files
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Output files
+outputs/*
+!outputs/.gitkeep
+*.png
+*.pdf
+*.tif
+*.tiff
+*.nc
+
+# Configuration files with sensitive data
+config/secrets.yaml
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Google Earth Engine credentials
+.config/earthengine/

@@ -1,0 +1,30 @@
+# Raw Data Directory
+
+This directory contains Landsat annual composites exported from Google Earth Engine.
+
+## Expected files:
+```
+raw/
+├── 1998.tif
+├── 1999.tif
+├── 2000.tif
+├── ...
+└── 2025.tif
+```
+
+## File specifications:
+- **Bands**: BLUE, GREEN, RED, NIR
+- **Resolution**: 30m
+- **Projection**: EPSG:4326 (WGS84)
+- **NoData**: -9999
+- **Format**: Cloud-optimized GeoTIFF
+
+## Data source:
+Files are generated using the Google Earth Engine script:
+`scripts/landsat_data_acquisition.js`
+
+## How to obtain data:
+1. Run the GEE script in Google Earth Engine Code Editor
+2. Download exported files from Google Drive folder "Landsat_Composites"
+3. Place all .tif files in this directory
+4. Verify files are named by year (1998.tif, 1999.tif, etc.)

@@ -1,0 +1,16 @@
+# Processed Data Directory
+
+This directory will contain processed and derived datasets.
+
+## Generated files:
+- NDVI time series (NetCDF format)
+- Clipped and reprojected data
+- Municipal aggregations
+- Quality-controlled datasets
+- Intermediate analysis results
+
+## File naming convention:
+- `ndvi_timeseries_amb.nc` - Main NDVI time series
+- `ndvi_municipal_[municipality].nc` - Municipal subsets
+- `landsat_processed_[year].nc` - Annual processed composites
+- `quality_control_report.csv` - QC summary statistics

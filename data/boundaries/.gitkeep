@@ -1,0 +1,24 @@
+# Boundary Data Directory
+
+This directory should contain administrative boundary files for the Barcelona Metropolitan Area.
+
+## Required files:
+- `amb_boundary.shp` - AMB administrative boundary
+- `municipalities.shp` - Municipal boundaries within AMB
+- `districts.shp` - District boundaries (optional)
+
+## Data sources:
+- AMB (Àrea Metropolitana de Barcelona) official website
+- Institut Cartogràfic i Geològic de Catalunya (ICGC)
+- OpenStreetMap administrative boundaries
+- Generalitat de Catalunya data portal
+
+## File format requirements:
+- Shapefile (.shp) with associated files (.shx, .dbf, .prj)
+- CRS: EPSG:25831 (UTM Zone 31N) preferred
+- Include NAME/NOM field for municipality names
+
+## Download links:
+- AMB Open Data: https://opendata.amb.cat/
+- ICGC: https://www.icgc.cat/
+- OpenStreetMap: https://download.geofabrik.de/

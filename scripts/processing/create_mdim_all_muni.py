@@ -1,0 +1,368 @@
+"""
+Create a multidimensional raster from Landsat time series for ALL AMB municipalities.
+This version creates individual municipality datasets while also allowing overall analysis.
+"""
+
+import os
+import re
+import warnings
+import unicodedata
+import numpy as np
+import pandas as pd
+import xarray as xr
+import rasterio
+import geopandas as gpd
+import yaml
+from pathlib import Path
+from datetime import datetime
+from tqdm import tqdm
+from rasterio.mask import mask
+from loguru import logger
+
+warnings.filterwarnings('ignore', category=rasterio.errors.NotGeoreferencedWarning)
+
+# Configure loguru
+logger.add(
+    "logs/landsat_processing_{time:YYYY-MM-DD}.log",
+    rotation="1 day",
+    retention="30 days",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
+)
+
+
+def load_config(config_path="config/config.yaml"):
+    """Load configuration from YAML file with proper encoding."""
+    with open(config_path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def normalize_and_safe_filename(text):
+    """Normalize text and create safe filename in one step."""
+    if not text:
+        return "", "", "unknown"
+    
+    # Normalize unicode
+    normalized = unicodedata.normalize('NFKD', text)
+    no_accents = ''.join(c for c in normalized if not unicodedata.combining(c))
+    
+    # Create safe filename
+    safe = text.replace(" ", "_")
+    safe = re.sub(r'[àáâãäåæ]', 'a', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[èéêë]', 'e', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[ìíîï]', 'i', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[òóôõö]', 'o', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[ùúûü]', 'u', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[ç]', 'c', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[ñ]', 'n', safe, flags=re.IGNORECASE)
+    safe = re.sub(r"['\-]", '', safe, flags=re.IGNORECASE)
+    safe = re.sub(r'[^a-zA-Z0-9_]', '', safe)
+    
+    return normalized, no_accents, safe
+
+
+def load_municipalities(boundaries_path):
+    """Load all municipalities from shapefile."""
+    logger.info(f"Loading municipalities from: {boundaries_path}")
+    
+    # Try different encodings
+    for encoding in ['utf-8', 'cp1252']:
+        try:
+            gdf = gpd.read_file(boundaries_path, encoding=encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise UnicodeDecodeError("Could not read shapefile with any encoding")
+    
+    logger.info(f"Loaded {len(gdf)} features with columns: {list(gdf.columns)}")
+    
+    # Find name column
+    name_cols = ['name', 'Name', 'NAME', 'nom', 'Nom', 'NOM', 'municipi', 'municipality']
+    name_col = next((col for col in name_cols if col in gdf.columns), None)
+    
+    if not name_col:
+        # Use first text column
+        name_col = next((col for col in gdf.columns 
+                        if gdf[col].dtype == 'object' and col != 'geometry'), None)
+    
+    if not name_col:
+        raise ValueError(f"Could not find name column in {list(gdf.columns)}")
+    
+    logger.info(f"Using column '{name_col}' for municipality names")
+    
+    # Add processed names
+    gdf['municipality_name'] = gdf[name_col]
+    for idx, name in enumerate(gdf[name_col]):
+        if name:
+            _, no_accents, safe = normalize_and_safe_filename(str(name))
+            gdf.loc[idx, 'normalized_name'] = no_accents
+            gdf.loc[idx, 'safe_name'] = safe
+    
+    municipalities = sorted([name for name in gdf[name_col].unique() if name])
+    logger.info(f"Found {len(municipalities)} municipalities")
+    
+    return gdf, name_col
+
+
+def create_municipality_masks(src, boundaries_gdf, out_transform, height, width):
+    """Create municipality ID raster with individual masks."""
+    municipality_ids = np.zeros((height, width), dtype=np.int16)
+    municipality_names = []
+    
+    for idx, (_, row) in enumerate(boundaries_gdf.iterrows(), 1):
+        municipality_names.append(row['municipality_name'])
+        try:
+            muni_image, _ = mask(src, [row['geometry']], crop=False, 
+                               all_touched=True, filled=False)
+            
+            # Extract clipped region
+            muni_clipped = muni_image[0][
+                int((out_transform[5] - src.transform[5]) / src.transform[4]):
+                int((out_transform[5] - src.transform[5]) / src.transform[4]) + height,
+                int((out_transform[2] - src.transform[2]) / src.transform[0]):
+                int((out_transform[2] - src.transform[2]) / src.transform[0]) + width
+            ]
+            
+            # Resize if needed
+            if muni_clipped.shape != municipality_ids.shape:
+                try:
+                    from scipy.ndimage import zoom
+                    scale_y = municipality_ids.shape[0] / muni_clipped.shape[0]
+                    scale_x = municipality_ids.shape[1] / muni_clipped.shape[1]
+                    muni_clipped = zoom(muni_clipped, (scale_y, scale_x), order=0)
+                except ImportError:
+                    logger.warning(f"scipy not available, skipping municipality {row['municipality_name']}")
+                    continue
+            
+            municipality_ids[~muni_clipped.mask] = idx
+            
+        except Exception as e:
+            logger.warning(f"Could not process municipality {row['municipality_name']}: {e}")
+            continue
+    
+    return municipality_ids, municipality_names
+
+
+def load_and_clip_landsat_file(file_path, year, boundaries_gdf):
+    """Load a Landsat file and clip it to boundaries."""
+    with rasterio.open(file_path) as src:
+        # Clip to boundaries
+        out_image, out_transform = mask(src, boundaries_gdf.geometry, crop=True)
+        
+        # Create coordinates
+        height, width = out_image.shape[1], out_image.shape[2]
+        x_coords = np.linspace(out_transform[2], out_transform[2] + width*out_transform[0], width)
+        y_coords = np.linspace(out_transform[5], out_transform[5] + height*out_transform[4], height)
+        
+        # Create dataset
+        band_names = ['BLUE', 'GREEN', 'RED', 'NIR']
+        data_vars = {band: (['y', 'x'], out_image[i]) for i, band in enumerate(band_names)}
+        
+        ds = xr.Dataset(
+            data_vars,
+            coords={
+                'x': x_coords,
+                'y': y_coords,
+                'time': pd.to_datetime(f'{year}-07-01')
+            }
+        )
+        
+        # Add municipality masks
+        municipality_ids, municipality_names = create_municipality_masks(
+            src, boundaries_gdf, out_transform, height, width
+        )
+        
+        ds['municipality_id'] = (['y', 'x'], municipality_ids)
+        ds.attrs.update({
+            'municipality_names': municipality_names,
+            'n_municipalities': len(municipality_names)
+        })
+        
+        return ds
+
+
+def calculate_ndvi(combined_ds):
+    """Calculate NDVI with proper NoData handling."""
+    logger.info("Calculating NDVI...")
+    
+    red = combined_ds['RED'].where(combined_ds['RED'] != -9999)
+    nir = combined_ds['NIR'].where(combined_ds['NIR'] != -9999)
+    
+    logger.info(f"RED: Min={float(red.min()):.3f}, Max={float(red.max()):.3f}, Mean={float(red.mean()):.3f}")
+    logger.info(f"NIR: Min={float(nir.min()):.3f}, Max={float(nir.max()):.3f}, Mean={float(nir.mean()):.3f}")
+    
+    # Calculate NDVI
+    denominator = (nir + red).where(lambda x: np.abs(x) > 0.001)
+    ndvi = ((nir - red) / denominator).clip(-1.0, 1.0)
+    
+    # Log statistics
+    valid_count = int(ndvi.count())
+    total_count = int(ndvi.size)
+    coverage_percent = (valid_count / total_count) * 100
+    
+    logger.info(f"NDVI: Min={float(ndvi.min()):.3f}, Max={float(ndvi.max()):.3f}, Mean={float(ndvi.mean()):.3f}")
+    logger.info(f"Valid pixels: {valid_count:,}/{total_count:,} ({coverage_percent:.1f}%)")
+    
+    return ndvi.astype('float32')
+
+
+def classify_ndvi(ndvi):
+    """Classify NDVI into 6 categories."""
+    logger.info("Classifying NDVI values into 6 categories...")
+    
+    # Define classification thresholds
+    thresholds = [(-1.0, 0.0), (0.0, 0.1), (0.1, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 1.0)]
+    class_names = ['Water/Bare/Built-up', 'Very sparse vegetation', 'Sparse vegetation', 
+                   'Moderate vegetation', 'Dense vegetation', 'Very dense vegetation']
+    
+    ndvi_class = xr.zeros_like(ndvi, dtype='int8')
+    
+    for i, (min_val, max_val) in enumerate(thresholds):
+        if i == len(thresholds) - 1:  # Last class includes upper bound
+            mask = (ndvi >= min_val) & (ndvi <= max_val)
+        else:
+            mask = (ndvi >= min_val) & (ndvi < max_val)
+        ndvi_class = xr.where(mask, i, ndvi_class)
+    
+    # Handle NoData
+    ndvi_class = ndvi_class.where(~ndvi.isnull(), -1)
+    
+    # Log classification results
+    logger.info("NDVI Classification Results:")
+    for i, name in enumerate(class_names):
+        count = int((ndvi_class == i).sum())
+        logger.info(f"  Class {i}: {count} pixels - {name}")
+    logger.info(f"  NoData (-1): {int((ndvi_class == -1).sum())} pixels")
+    
+    return ndvi_class.astype('int8')
+
+
+def create_multidimensional_raster_all_municipalities(config_path="config/config.yaml"):
+    """Create a multidimensional raster for ALL AMB municipalities."""
+    config = load_config(config_path)
+    
+    # Setup paths
+    raw_data_path = Path(config['paths']['raw_data'])
+    processed_data_path = Path(config['paths']['processed_data'])
+    boundaries_path = Path(config['paths']['boundaries'])
+    
+    start_year = config['analysis']['start_year']
+    end_year = config['analysis']['end_year']
+    file_pattern = config['data']['file_pattern']
+    
+    logger.info(f"Creating multidimensional raster for ALL AMB municipalities ({start_year}-{end_year})")
+    logger.info(f"Raw data: {raw_data_path}")
+    
+    # Load municipalities
+    boundaries_gdf, name_col = load_municipalities(boundaries_path)
+    logger.info(f"Processing {len(boundaries_gdf)} municipalities")
+    
+    # Find available files
+    available_files = []
+    available_years = []
+    
+    for year in range(start_year, end_year + 1):
+        file_path = raw_data_path / file_pattern.format(year=year)
+        if file_path.exists():
+            available_files.append(file_path)
+            available_years.append(year)
+    
+    if not available_files:
+        raise FileNotFoundError(f"No files found in {raw_data_path} with pattern {file_pattern}")
+    
+    logger.info(f"Found {len(available_files)} files for years: {min(available_years)}-{max(available_years)}")
+    
+    # Process files
+    datasets = []
+    logger.info("Loading and clipping files...")
+    
+    for file_path, year in tqdm(zip(available_files, available_years), 
+                            total=len(available_files), 
+                            desc="Processing files"):
+        try:
+            ds = load_and_clip_landsat_file(file_path, year, boundaries_gdf)
+            # Force all bands to float32 to save memory
+            for band in ['BLUE', 'GREEN', 'RED', 'NIR']:
+                if band in ds:
+                    ds[band] = ds[band].astype('float32')
+            datasets.append(ds)
+        except Exception as e:
+            logger.warning(f"Failed to process {file_path}: {e}")
+            continue
+    
+    if not datasets:
+        raise RuntimeError("No datasets were successfully processed")
+    
+    # Combine datasets
+    logger.info("Combining datasets...")
+    combined_ds = xr.concat(datasets, dim='time').sortby('time')
+    
+    # Calculate NDVI and classification
+    ndvi = calculate_ndvi(combined_ds)
+    combined_ds['ndvi'] = (['time', 'y', 'x'], ndvi.data)
+    
+    ndvi_class = classify_ndvi(combined_ds['ndvi'])
+    combined_ds['ndvi_class'] = (['time', 'y', 'x'], ndvi_class.data)
+    
+    # Add attributes
+    combined_ds['ndvi'].attrs = {
+        'long_name': 'Normalized Difference Vegetation Index',
+        'units': 'dimensionless',
+        'valid_range': [-1, 1],
+        'description': 'Calculated from Landsat Collection 2 Level 2 data'
+    }
+    
+    combined_ds['ndvi_class'].attrs = {
+        'long_name': 'NDVI Classification Categories',
+        'units': 'class',
+        'valid_range': [0, 5],
+        'description': 'NDVI classified into 6 vegetation categories',
+        'classification_scheme': 'Class 0: -1 to 0 (Water/Bare/Built-up), Class 1: 0 to 0.1 (Very sparse vegetation), Class 2: 0.1 to 0.2 (Sparse vegetation), Class 3: 0.2 to 0.4 (Moderate vegetation), Class 4: 0.4 to 0.6 (Dense vegetation), Class 5: 0.6 to 1 (Very dense vegetation)',
+        'nodata_value': -1
+    }
+    
+    combined_ds.attrs.update({
+        'title': 'AMB Landsat Time Series - All Municipalities',
+        'description': f'Landsat Collection 2 Level 2 data for all {len(boundaries_gdf)} AMB municipalities ({min(available_years)}-{max(available_years)})',
+        'source': 'Google Earth Engine',
+        'processing_level': 'Collection 2 Level 2',
+        'spatial_resolution': '30m',
+        'projection': 'EPSG:4326',
+        'total_municipalities': len(boundaries_gdf),
+        'municipality_names': ', '.join(boundaries_gdf['municipality_name'].tolist()),
+        'n_years': len(available_years),
+        'bands': 'BLUE, GREEN, RED, NIR',
+        'derived_variables': 'NDVI, NDVI_CLASS',
+        'created_date': datetime.now().isoformat(),
+        'individual_analysis_supported': 'true'
+    })
+    
+    # Save dataset
+    processed_data_path.mkdir(parents=True, exist_ok=True)
+    output_file = processed_data_path / "landsat_mdim_all_muni.nc"
+    
+    logger.info(f"Saving dataset to: {output_file}")
+    
+    encoding = {var: {'zlib': True, 'complevel': 1} for var in 
+               ['BLUE', 'GREEN', 'RED', 'NIR', 'ndvi', 'ndvi_class', 'municipality_id']}
+    
+    combined_ds.to_netcdf(output_file, engine='netcdf4', encoding=encoding)
+    
+    # Save municipality mapping
+    municipality_info = boundaries_gdf[['municipality_name', 'safe_name']].copy()
+    municipality_info['municipality_id'] = range(1, len(municipality_info) + 1)
+    municipality_info_file = processed_data_path / "municipality_mapping.csv"
+    municipality_info.to_csv(municipality_info_file, index=False, encoding='utf-8')
+    
+    logger.success("Dataset creation complete!")
+    logger.info(f"Total municipalities: {len(boundaries_gdf)}")
+    logger.info(f"Time range: {min(available_years)}-{max(available_years)}")
+    logger.info(f"Spatial dimensions: {combined_ds.dims['y']} x {combined_ds.dims['x']} pixels")
+    logger.info(f"Municipality mapping saved to: {municipality_info_file}")
+    
+    return combined_ds, municipality_info
+
+
+if __name__ == "__main__":
+    create_multidimensional_raster_all_municipalities()

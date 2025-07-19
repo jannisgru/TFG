@@ -1,0 +1,40 @@
+2025-07-19 13:13:16 | INFO | Creating multidimensional raster for ALL AMB municipalities (1984-2025)
+2025-07-19 13:13:16 | INFO | Raw data: data\raw\GEE_raw
+2025-07-19 13:13:16 | INFO | Loading municipalities from: data\boundaries\AMB_Municipalities.shp
+2025-07-19 13:13:16 | INFO | Loaded 45 features with columns: ['name', 'geometry']
+2025-07-19 13:13:16 | INFO | Using column 'name' for municipality names
+2025-07-19 13:13:16 | INFO | Found 45 municipalities
+2025-07-19 13:13:16 | INFO | Processing 45 municipalities
+2025-07-19 13:13:16 | INFO | Found 42 files for years: 1984-2025
+2025-07-19 13:13:16 | INFO | Loading and clipping files...
+2025-07-19 13:17:48 | INFO | Combining datasets...
+2025-07-19 13:20:42 | INFO | Creating multidimensional raster for ALL AMB municipalities (1984-2025)
+2025-07-19 13:20:42 | INFO | Raw data: data\raw\GEE_raw
+2025-07-19 13:20:42 | INFO | Loading municipalities from: data\boundaries\AMB_Municipalities.shp
+2025-07-19 13:20:42 | INFO | Loaded 45 features with columns: ['name', 'geometry']
+2025-07-19 13:20:42 | INFO | Using column 'name' for municipality names
+2025-07-19 13:20:42 | INFO | Found 45 municipalities
+2025-07-19 13:20:42 | INFO | Processing 45 municipalities
+2025-07-19 13:20:42 | INFO | Found 42 files for years: 1984-2025
+2025-07-19 13:20:42 | INFO | Loading and clipping files...
+2025-07-19 13:25:10 | INFO | Combining datasets...
+2025-07-19 13:25:20 | INFO | Calculating NDVI...
+2025-07-19 13:25:22 | INFO | RED: Min=-0.200, Max=1.602, Mean=0.085
+2025-07-19 13:25:22 | INFO | NIR: Min=-0.030, Max=1.602, Mean=0.232
+2025-07-19 13:25:23 | INFO | NDVI: Min=-0.600, Max=1.000, Mean=0.499
+2025-07-19 13:25:23 | INFO | Valid pixels: 39,738,343/70,378,392 (56.5%)
+2025-07-19 13:25:24 | INFO | Classifying NDVI values into 6 categories...
+2025-07-19 13:25:25 | INFO | NDVI Classification Results:
+2025-07-19 13:25:25 | INFO |   Class 0: 63208 pixels - Water/Bare/Built-up
+2025-07-19 13:25:26 | INFO |   Class 1: 1333987 pixels - Very sparse vegetation
+2025-07-19 13:25:26 | INFO |   Class 2: 4877484 pixels - Sparse vegetation
+2025-07-19 13:25:26 | INFO |   Class 3: 7062475 pixels - Moderate vegetation
+2025-07-19 13:25:26 | INFO |   Class 4: 9868047 pixels - Dense vegetation
+2025-07-19 13:25:26 | INFO |   Class 5: 16533142 pixels - Very dense vegetation
+2025-07-19 13:25:26 | INFO |   NoData (-1): 30640049 pixels
+2025-07-19 13:25:26 | INFO | Saving dataset to: data\processed\landsat_mdim_all_muni.nc
+2025-07-19 13:25:52 | SUCCESS | Dataset creation complete!
+2025-07-19 13:25:52 | INFO | Total municipalities: 45
+2025-07-19 13:25:52 | INFO | Time range: 1984-2025
+2025-07-19 13:25:52 | INFO | Spatial dimensions: 1004 x 1669 pixels
+2025-07-19 13:25:52 | INFO | Municipality mapping saved to: data\processed\municipality_mapping.csv

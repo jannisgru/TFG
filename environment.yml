@@ -1,0 +1,25 @@
+name: tfg
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - xarray
+  - xarray-spatial
+  - rasterio
+  - geopandas
+  - shapely
+  - rioxarray
+  - matplotlib
+  - seaborn
+  - plotly
+  - pyyaml
+  - tqdm
+  - netcdf4
+  - mkl
+  - mkl-service
+  - pip
+  - ruptures
+  - loguru

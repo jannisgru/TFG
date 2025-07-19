@@ -1,0 +1,19 @@
+# AMB Vegetation Analysis Configuration
+
+paths:
+  raw_data: "data/raw/GEE_raw"
+  processed_data: "data/processed"
+  boundaries: "data/boundaries/AMB_Municipalities.shp"
+
+analysis:
+  start_year: 1984
+  end_year: 2025
+
+data:
+  bands: ["BLUE", "GREEN", "RED", "NIR"]
+  derived_variables: ["NDVI"]
+  nodata_value: -9999
+  file_pattern: "{year}.tif"
+
+visualization:
+  static_outputs: "outputs/visualizations"
