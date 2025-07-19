@@ -2,48 +2,54 @@
 Simple interactive visualization script for ALL AMB municipalities NetCDF data.
 Memory-efficient version without complex features.
 """
+
+# ==== CONFIGURABLE PARAMETERS ====
+NETCDF_PATH = "data/processed/landsat_mdim_all_muni.nc"
+OUTPUT_DIR = "outputs/interactive"
+TIME_SERIES_NAME = "simple_time_series.html"
+SPATIAL_MAP_NAME = "simple_spatial_map.html"
+LOG_PATH = "logs/visualization_{time:YYYY-MM-DD}.log"
+# ================================
+
 import xarray as xr
 import plotly.graph_objects as go
 import pandas as pd
 from pathlib import Path
+from loguru import logger
 import warnings
 
 warnings.filterwarnings('ignore')
 
+# Configure loguru
+logger.add(
+    LOG_PATH,
+    rotation="1 day",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
+)
 
 def load_data_with_municipalities(file_path):
     """Load NetCDF data with municipality information."""
-    print(f"Loading data from: {file_path}")
+    logger.info(f"Loading data from: {file_path}")
     ds = xr.open_dataset(file_path)
-    print(f"Data loaded: {dict(ds.dims)}")
-    
-    # Load municipality mapping if available
-    municipality_mapping = None
     mapping_file = Path(file_path).parent / "municipality_mapping.csv"
-    if mapping_file.exists():
-        municipality_mapping = pd.read_csv(mapping_file)
-        print(f"Municipality mapping loaded: {len(municipality_mapping)} municipalities")
+    municipality_mapping = pd.read_csv(mapping_file) if mapping_file.exists() else None
+    logger.info(f"Data loaded: {dict(ds.dims)}")
+    if municipality_mapping is not None:
+        logger.info(f"Municipality mapping loaded: {len(municipality_mapping)} municipalities")
     else:
-        print("Municipality mapping not found - overall analysis only")
-    
-    return ds, municipality_mapping
+        logger.info("Municipality mapping not found - overall analysis only")
+    return ds
 
 
-def create_simple_time_series(ds, output_dir="outputs/interactive"):
+def create_simple_time_series(ds, output_dir=OUTPUT_DIR, output_name=TIME_SERIES_NAME):
     """Create simple time series plot."""
-    print("Creating simple time series...")
-    
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
-    # Calculate overall statistics
     ndvi_mean = ds['ndvi'].mean(dim=['x', 'y'])
-    ndvi_std = ds['ndvi'].std(dim=['x', 'y'])
-    
-    # Create figure
+    ndvi_p25 = ds['ndvi'].quantile(0.2, dim=['x', 'y'])
+    ndvi_p75 = ds['ndvi'].quantile(0.8, dim=['x', 'y'])
     fig = go.Figure()
-    
-    # Add mean line
     fig.add_trace(go.Scatter(
         x=ds.time.values,
         y=ndvi_mean.values,
@@ -52,131 +58,136 @@ def create_simple_time_series(ds, output_dir="outputs/interactive"):
         line=dict(color='blue', width=3),
         hovertemplate='Year: %{x}<br>NDVI: %{y:.3f}<extra></extra>'
     ))
-    
-    # Add confidence band
     fig.add_trace(go.Scatter(
         x=ds.time.values,
-        y=ndvi_mean.values + ndvi_std.values,
+        y=ndvi_p75.values,
         mode='lines',
         line=dict(color='rgba(0,0,255,0)'),
         showlegend=False,
         hoverinfo='skip'
     ))
-    
     fig.add_trace(go.Scatter(
         x=ds.time.values,
-        y=ndvi_mean.values - ndvi_std.values,
+        y=ndvi_p25.values,
         mode='lines',
         fill='tonexty',
         fillcolor='rgba(0,0,255,0.2)',
         line=dict(color='rgba(0,0,255,0)'),
-        name='±1 Std Dev',
+        name='25th-75th Percentile Range',
         hoverinfo='skip'
     ))
-    
-    # Update layout
     fig.update_layout(
         title='Interactive NDVI Time Series - All AMB Municipalities',
         xaxis_title='Year',
         yaxis_title='NDVI',
         hovermode='x unified',
         template='plotly_white',
-        height=600
+        height=600,
+        yaxis=dict(range=[0, 1])
     )
-    
-    # Save
-    output_file = output_path / "simple_time_series.html"
-    fig.write_html(output_file)
-    print(f"Simple time series saved: {output_file}")
+    output_file = output_path / output_name
+    fig.write_html(output_file, include_plotlyjs='cdn', auto_play=False)
+    logger.success(f"Time series saved: {output_file}")
     return fig
 
 
-def create_simple_spatial_map(ds, output_dir="outputs/interactive"):
-    """Create simple spatial map."""
-    print("Creating simple spatial map...")
-    
+def create_simple_spatial_map(ds, output_dir=OUTPUT_DIR, output_name=SPATIAL_MAP_NAME):
+    """Create memory-efficient spatial map with time slider using animation frames."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
-    # Select middle year
-    middle_year_idx = len(ds.time) // 2
-    year_data = ds['ndvi'].isel(time=middle_year_idx)
-    year = int(ds.time.isel(time=middle_year_idx).values)
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add heatmap
-    fig.add_trace(go.Heatmap(
-        z=year_data.values,
-        x=ds.x.values,
-        y=ds.y.values,
-        colorscale='RdYlGn',
-        zmin=-0.5,
-        zmax=1.0,
-        colorbar=dict(title="NDVI"),
-        hovertemplate='Lon: %{x:.4f}<br>Lat: %{y:.4f}<br>NDVI: %{z:.3f}<extra></extra>'
-    ))
-    
-    # Update layout
+
+    # Downsample NDVI and coordinates by factor of 2 (60m pixels)
+    ndvi_ds = ds['ndvi'][:, ::2, ::2]
+    x_ds = ds.x.values[::2]
+    y_ds = ds.y.values[::2]
+
+    # Convert time values to years
+    years = pd.to_datetime(ds.time.values).year
+
+    # Initial frame (first year)
+    first_year_data = ndvi_ds.isel(time=0)
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=first_year_data.values,
+                x=x_ds,
+                y=y_ds,
+                colorscale='RdYlGn',
+                zmin=-0.5,
+                zmax=1.0,
+                colorbar=dict(title="NDVI"),
+                hovertemplate=f'Year: {years[0]}<br>Lon: %{{x:.4f}}<br>Lat: %{{y:.4f}}<br>NDVI: %{{z:.3f}}<extra></extra>',
+            )
+        ],
+        frames=[
+            go.Frame(
+                data=[
+                    go.Heatmap(
+                        z=ndvi_ds.isel(time=i).values,
+                        x=x_ds,
+                        y=y_ds,
+                        colorscale='RdYlGn',
+                        zmin=-0.5,
+                        zmax=1.0,
+                        colorbar=dict(title="NDVI"),
+                        hovertemplate=f'Year: {years[i]}<br>Lon: %{{x:.4f}}<br>Lat: %{{y:.4f}}<br>NDVI: %{{z:.3f}}<extra></extra>',
+                    )
+                ],
+                name=str(years[i])
+            )
+            for i in range(len(years))
+        ]
+    )
+
+    # Add slider and play/stop buttons
     fig.update_layout(
-        title=f'NDVI Spatial Map - All AMB Municipalities ({year})',
+        title='NDVI Spatial Map - All AMB Municipalities (Interactive Time Slider, 60m pixels)',
         xaxis_title='Longitude',
         yaxis_title='Latitude',
         template='plotly_white',
-        height=600
+        height=900,
+        updatemenus=[dict(
+            type="buttons",
+            direction="left",
+            x=0.03,
+            y=-0.1,
+            showactive=False,
+            buttons=[
+                dict(label="Play", method="animate", args=[None, {"frame": {"duration": 500, "redraw": True}, "fromcurrent": True, "mode": "immediate"}]),
+                dict(label="Stop", method="animate", args=[[None], {"mode": "immediate", "frame": {"duration": 0, "redraw": False}, "transition": {"duration": 0}}])
+            ]
+        )],
+        sliders=[dict(
+            steps=[
+                dict(method="animate", args=[[str(years[i])], {"mode": "immediate"}], label=str(years[i]))
+                for i in range(len(years))
+            ],
+            active=0,
+            currentvalue={"prefix": "Year: "},
+            pad={"t": 80},  # Move slider further down to make space for buttons
+            x=0.05,
+            y=0.05,
+        )]
     )
-    
-    # Save
-    output_file = output_path / "simple_spatial_map.html"
-    fig.write_html(output_file)
-    print(f"Simple spatial map saved: {output_file}")
+    # Make pixels appear square
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
+
+    output_file = output_path / output_name
+    fig.write_html(output_file, include_plotlyjs='cdn', auto_play=False)
+    logger.success(f"Spatial map with time slider saved: {output_file}")
     return fig
 
 
-def main(netcdf_path="data/processed/landsat_multidimensional_ALL_AMB_municipalities.nc"):
-    """Main function to generate simple visualizations."""
-    print("="*50)
-    print("SIMPLE INTERACTIVE VISUALIZATIONS")
-    print("="*50)
-    
-    # Load data
-    ds, municipality_mapping = load_data_with_municipalities(netcdf_path)
-    
-    # Print dataset information
-    print(f"\n📊 Dataset Information:")
-    print(f"- Total pixels: {ds.dims['x']} x {ds.dims['y']}")
-    print(f"- Time range: {ds.time.min().values} - {ds.time.max().values}")
-    print(f"- Variables: {list(ds.data_vars.keys())}")
-    print(f"- NDVI range: {float(ds.ndvi.min()):.3f} to {float(ds.ndvi.max()):.3f}")
-    
-    if municipality_mapping is not None:
-        print(f"- Municipalities: {len(municipality_mapping)}")
-    
-    # Set output directory
-    output_dir = "outputs/interactive"
-    
-    print(f"\n{'='*30}")
-    print("GENERATING VISUALIZATIONS")
-    print("="*30)
-    
+def main(netcdf_path=NETCDF_PATH, output_dir=OUTPUT_DIR):
     try:
-        # 1. Simple time series
+        ds = load_data_with_municipalities(netcdf_path)
         create_simple_time_series(ds, output_dir)
-        
-        # 2. Simple spatial map
         create_simple_spatial_map(ds, output_dir)
-        
-        print(f"\n✅ SIMPLE VISUALIZATIONS COMPLETED!")
-        print(f"📁 Check the '{output_dir}' folder for HTML files")
-        print(f"🌐 Open the HTML files in your web browser")
-        
     except Exception as e:
-        print(f"❌ Error during visualization: {e}")
+        logger.error(f"Error: {e}")
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
 
 
 if __name__ == "__main__":
-    netcdf_file = "data/processed/landsat_mdim_all_muni.nc"
-    main(netcdf_file)
+    main()
