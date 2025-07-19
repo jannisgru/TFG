@@ -1,15 +1,3 @@
 # Outputs Directory
 
 This directory will contain all analysis outputs and results.
-
-## Generated content:
-- Maps and visualizations
-- Statistical analysis results
-- Publication-ready figures
-- Interactive dashboards
-- Summary reports
-
-## Subdirectories:
-- `maps/` - Static and interactive maps
-- `statistics/` - Analysis results and summary tables
-- `figures/` - Publication-quality figures for thesis
