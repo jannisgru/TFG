@@ -8,6 +8,7 @@ paths:
 analysis:
   start_year: 1984
   end_year: 2025
+  year_step: 1
 
 data:
   bands: ["BLUE", "GREEN", "RED", "NIR"]
