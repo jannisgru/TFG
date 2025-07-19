@@ -12,13 +12,6 @@ raw/
 └── 2025.tif
 ```
 
-## File specifications:
-- **Bands**: BLUE, GREEN, RED, NIR
-- **Resolution**: 30m
-- **Projection**: EPSG:4326 (WGS84)
-- **NoData**: -9999
-- **Format**: Cloud-optimized GeoTIFF
-
 ## Data source:
 Files are generated using the Google Earth Engine script:
 `scripts/landsat_data_acquisition.js`
