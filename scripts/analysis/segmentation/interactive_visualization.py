@@ -28,7 +28,14 @@ sys.path.append(str(scripts_dir))
 try:
     from .cube import STCube
 except ImportError:
-    from cube import STCube
+    try:
+        from cube import STCube
+    except ImportError:
+        # Define a minimal STCube class for compatibility
+        class STCube:
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
 
 
 class InteractiveVisualization:
@@ -71,6 +78,41 @@ class InteractiveVisualization:
         else:
             return []
     
+    def _is_empty_array_or_list(self, obj) -> bool:
+        """Check if an object (list, array, etc.) is empty."""
+        if obj is None:
+            return True
+        
+        # Handle numpy arrays
+        if isinstance(obj, np.ndarray):
+            return obj.size == 0
+        
+        # Handle lists and other sequences
+        try:
+            return len(obj) == 0
+        except (TypeError, AttributeError):
+            return True
+
+    def _has_valid_ndvi_profile(self, cube: Dict) -> bool:
+        """Check if cube has a valid NDVI profile."""
+        ndvi_profile = cube.get('ndvi_profile')
+        if ndvi_profile is None:
+            return False
+        
+        # Handle numpy arrays
+        if isinstance(ndvi_profile, np.ndarray):
+            return ndvi_profile.size > 0
+        
+        # Handle lists
+        if isinstance(ndvi_profile, list):
+            return len(ndvi_profile) > 0
+        
+        # For other types, try to check length
+        try:
+            return len(ndvi_profile) > 0
+        except (TypeError, AttributeError):
+            return False
+
     def _has_valid_pixels(self, cube: Dict) -> bool:
         """Check if cube has valid pixel data."""
         return len(self._get_pixels_safely(cube)) > 0
@@ -170,7 +212,7 @@ class InteractiveVisualization:
                 # Already in dict format, ensure all required keys exist
                 # Get pixels - prioritize coordinates if pixels is empty
                 pixels = cube.get('pixels', [])
-                if not pixels:
+                if self._is_empty_array_or_list(pixels):
                     pixels = cube.get('coordinates', [])
                 
                 # Get NDVI profile - prioritize mean_temporal_profile for segmentation data
@@ -341,7 +383,12 @@ class InteractiveVisualization:
         if 'time' in data.dims:
             time_coords = pd.to_datetime(data.time.values)
         else:
-            time_coords = list(range(len(cubes[0]['ndvi_profile']) if cubes[0]['ndvi_profile'] else 10))
+            # Use the first cube with valid NDVI profile to get time dimension
+            first_valid_cube = next((cube for cube in cubes if self._has_valid_ndvi_profile(cube)), None)
+            if first_valid_cube:
+                time_coords = list(range(len(first_valid_cube['ndvi_profile'])))
+            else:
+                time_coords = list(range(10))  # Default fallback
         
         # Create subplots for different views
         fig = make_subplots(
@@ -357,7 +404,7 @@ class InteractiveVisualization:
         )
         
         # Plot 1: All clusters time series
-        valid_cubes = [cube for cube in cubes if cube['ndvi_profile'] and len(cube['ndvi_profile']) > 0]
+        valid_cubes = [cube for cube in cubes if self._has_valid_ndvi_profile(cube)]
         
         for i, cube in enumerate(valid_cubes[:10]):  # Limit to first 10 for readability
             color_idx = i % len(self.color_palette)
@@ -472,53 +519,37 @@ class InteractiveVisualization:
             print("Warning: No cubes to visualize")
             return None
         
-        # Process cube data to ensure consistent format
-        cubes = self._process_cube_data(cubes, data)
-        
         # Get time coordinates
         if 'time' in data.dims:
             time_coords = np.arange(len(data.time))
             time_labels = [str(t)[:10] for t in pd.to_datetime(data.time.values)]
         else:
-            time_coords = np.arange(10)
-            time_labels = [f"Time {i}" for i in time_coords]
+            # Use first valid cube to determine time dimension
+            first_valid_cube = next((cube for cube in cubes if self._has_valid_ndvi_profile(cube)), None)
+            if first_valid_cube:
+                time_coords = np.arange(len(first_valid_cube['ndvi_profile']))
+                time_labels = [f"Time {i}" for i in time_coords]
+            else:
+                time_coords = np.arange(10)
+                time_labels = [f"Time {i}" for i in range(10)]
         
-        # Prepare data for 3D visualization
-        fig = go.Figure()
-        
-        # Filter valid cubes with both spatial and temporal data
-        print(f"🔍 Filtering {len(cubes)} cubes for 3D visualization...")
-        valid_cubes = []
-        for i, cube in enumerate(cubes):
-            has_pixels = self._has_valid_pixels(cube)
-            ndvi_profile = cube.get('ndvi_profile', [])
-            has_ndvi = ndvi_profile is not None and len(ndvi_profile) > 0
-            print(f"   Cube {i}: pixels={has_pixels}, ndvi_profile={has_ndvi} (len={len(ndvi_profile) if ndvi_profile is not None else 0})")
-            if has_pixels and has_ndvi:
-                valid_cubes.append(cube)
-        
-        print(f"🎯 Found {len(valid_cubes)} valid cubes for 3D visualization")
+        # Filter valid cubes
+        valid_cubes = [cube for cube in cubes if self._has_valid_pixels(cube) and self._has_valid_ndvi_profile(cube)]
         
         if not valid_cubes:
             print("Warning: No valid cubes with spatial and temporal data")
             return None
         
-        # Get all pixels from all cubes for spatial extent
-        all_pixels = []
-        pixel_to_cube = {}  # Map pixel coordinates to cube info
+        print(f"Creating 3D visualization for {len(valid_cubes)} cubes over {len(time_coords)} time steps")
         
-        for cube_idx, cube in enumerate(valid_cubes):
+        # Create 3D plot
+        fig = go.Figure()
+        
+        # Get spatial extent
+        all_pixels = []
+        for cube in valid_cubes:
             pixels = self._get_pixels_safely(cube)
             all_pixels.extend(pixels)
-            
-            # Map each pixel to its cube information
-            for pixel in pixels:
-                pixel_to_cube[pixel] = {
-                    'cube_idx': cube_idx,
-                    'ndvi_profile': cube.get('ndvi_profile', []),
-                    'area': cube.get('area', 1),
-                    'mean_ndvi': cube.get('mean_ndvi', 0.5)
-                }
         
         if not all_pixels:
             print("Warning: No pixels found in cubes")
@@ -529,28 +560,26 @@ class InteractiveVisualization:
         y_min, y_max = min(y_coords), max(y_coords)
         x_min, x_max = min(x_coords), max(x_coords)
         
-        print(f"Creating 3D visualization for {len(all_pixels)} pixels over {len(time_coords)} time steps")
-        
-        # 1. CREATE BASEMAP ON X,Y PLANE (Z=0)
-        # Create a grid for the basemap
-        x_grid_size = min(50, x_max - x_min + 1)
-        y_grid_size = min(50, y_max - y_min + 1)
-        
-        x_basemap = np.linspace(x_min, x_max, x_grid_size)
-        y_basemap = np.linspace(y_min, y_max, y_grid_size)
-        X_base, Y_base = np.meshgrid(x_basemap, y_basemap)
+        # 1. CREATE BASEMAP (2D surface at z=0)
+        x_base = np.linspace(x_min, x_max, min(30, x_max - x_min + 1))
+        y_base = np.linspace(y_min, y_max, min(30, y_max - y_min + 1))
+        X_base, Y_base = np.meshgrid(x_base, y_base)
         Z_base = np.zeros_like(X_base)
         
         # Create NDVI basemap by interpolating from pixel data
-        basemap_ndvi = np.full_like(X_base, 0.3)  # Default background NDVI
+        basemap_ndvi = np.full_like(X_base, 0.3)  # Default background
         
-        # Fill basemap with actual NDVI values where we have data
-        for pixel, cube_info in pixel_to_cube.items():
-            px_y, px_x = pixel
-            # Find closest grid point
-            x_idx = np.argmin(np.abs(x_basemap - px_x))
-            y_idx = np.argmin(np.abs(y_basemap - px_y))
-            basemap_ndvi[y_idx, x_idx] = cube_info['mean_ndvi']
+        # Fill basemap with actual NDVI values
+        for cube in valid_cubes:
+            pixels = self._get_pixels_safely(cube)
+            mean_ndvi = cube.get('mean_ndvi', 0.5)
+            
+            for pixel in pixels:
+                px_y, px_x = pixel
+                # Find closest grid point
+                x_idx = np.argmin(np.abs(x_base - px_x))
+                y_idx = np.argmin(np.abs(y_base - px_y))
+                basemap_ndvi[y_idx, x_idx] = mean_ndvi
         
         # Add basemap surface
         fig.add_trace(go.Surface(
@@ -561,176 +590,105 @@ class InteractiveVisualization:
             colorscale='RdYlGn',
             cmin=0.0,
             cmax=1.0,
-            opacity=0.7,
+            opacity=0.6,
             name='NDVI Basemap',
             showscale=True,
             colorbar=dict(
-                title="Basemap NDVI",
+                title="NDVI",
                 x=1.1,
-                len=0.3,
-                y=0.8
+                len=0.5,
+                y=0.75
             ),
             hovertemplate='Basemap<br>X: %{x:.1f}<br>Y: %{y:.1f}<br>NDVI: %{surfacecolor:.3f}<extra></extra>'
         ))
         
-        # 2. CREATE 3D CUBES FOR EACH PIXEL AT EACH TIME STEP
-        # Sample pixels for performance (limit to ~200 pixels max)
-        max_pixels = 200
-        if len(all_pixels) > max_pixels:
-            step = len(all_pixels) // max_pixels
-            sampled_pixels = all_pixels[::step]
-            print(f"Sampling {len(sampled_pixels)} pixels for visualization performance")
-        else:
-            sampled_pixels = all_pixels
+        # 2. CREATE 3D CUBES FOR EACH CLUSTER AT EACH TIME STEP
+        colors = px.colors.qualitative.Set3
+        max_time_steps = min(10, len(time_coords))  # Limit for performance
         
-        # Limit time steps for performance
-        max_time_steps = min(12, len(time_coords))
-        sampled_time_coords = time_coords[:max_time_steps]
-        
-        # Create 3D cubes for each pixel at each time step
-        for t_idx, t in enumerate(sampled_time_coords):
-            z_position = t_idx + 1  # Start at z=1 (above basemap)
+        for time_idx in range(max_time_steps):
+            z_level = time_idx + 1  # Start above basemap
             
-            for pixel in sampled_pixels:
-                cube_info = pixel_to_cube.get(pixel)
-                if not cube_info or t_idx >= len(cube_info['ndvi_profile']):
-                    continue
+            for cube_idx, cube in enumerate(valid_cubes[:10]):  # Limit cubes for performance
+                pixels = self._get_pixels_safely(cube)
+                ndvi_profile = cube.get('ndvi_profile', [])
                 
-                px_y, px_x = pixel
-                ndvi_value = cube_info['ndvi_profile'][t_idx]
-                
-                # Skip very low NDVI values for cleaner visualization
-                if ndvi_value < 0.2:
-                    continue
-                
-                # Color based on NDVI (greener = higher NDVI)
-                if ndvi_value >= 0.7:
-                    color = 'darkgreen'
-                    opacity = 0.9
-                elif ndvi_value >= 0.5:
-                    color = 'green'
-                    opacity = 0.8
-                elif ndvi_value >= 0.4:
-                    color = 'lightgreen'
-                    opacity = 0.7
-                else:
-                    color = 'yellow'
-                    opacity = 0.6
-                
-                # Size based on NDVI (higher NDVI = bigger cube)
-                cube_size = max(3, min(15, ndvi_value * 20))
-                
-                # Add 3D cube as a marker
-                fig.add_trace(go.Scatter3d(
-                    x=[px_x],
-                    y=[px_y],
-                    z=[z_position],
-                    mode='markers',
-                    marker=dict(
-                        size=cube_size,
-                        color=color,
-                        opacity=opacity,
-                        symbol='square',  # Use square instead of cube (cube not supported)
-                        line=dict(width=1, color='black')
-                    ),
-                    name=f'T{t_idx}',
-                    legendgroup=f'time_{t_idx}',
-                    showlegend=(pixel == sampled_pixels[0]),  # Only show legend for first pixel of each time
-                    hovertemplate=f'Pixel ({px_x}, {px_y})<br>' +
-                                f'Time: {time_labels[t_idx] if t_idx < len(time_labels) else f"T{t}"}<br>' +
-                                f'NDVI: {ndvi_value:.3f}<br>' +
-                                f'Cluster: {cube_info["cube_idx"]}<extra></extra>'
-                ))
+                if time_idx < len(ndvi_profile):
+                    ndvi_value = ndvi_profile[time_idx]
+                    
+                    # Get pixel coordinates
+                    if pixels:
+                        px_coords = np.array(pixels)
+                        y_vals = px_coords[:, 0]
+                        x_vals = px_coords[:, 1]
+                        z_vals = np.full(len(pixels), z_level)
+                        ndvi_vals = np.full(len(pixels), ndvi_value)
+                        
+                        # Create scatter3d for this cluster at this time
+                        color_idx = cube_idx % len(colors)
+                        fig.add_trace(go.Scatter3d(
+                            x=x_vals,
+                            y=y_vals,
+                            z=z_vals,
+                            mode='markers',
+                            marker=dict(
+                                size=4,
+                                color=ndvi_vals,
+                                colorscale='RdYlGn',
+                                cmin=0.0,
+                                cmax=1.0,
+                                showscale=False,
+                                line=dict(width=1, color='black')
+                            ),
+                            name=f'Cluster {cube_idx+1} - T{time_idx}',
+                            text=[f'Cluster {cube_idx+1}<br>Time: {time_labels[time_idx]}<br>NDVI: {ndvi_value:.3f}<br>Pixel: ({int(x)},{int(y)})' 
+                                  for x, y in zip(x_vals, y_vals)],
+                            hovertemplate='%{text}<extra></extra>',
+                            showlegend=(time_idx == 0)  # Only show legend for first time step
+                        ))
         
-        # 3. ADD TIME AXIS LABELS
-        # Create time axis markers
-        for t_idx, t in enumerate(sampled_time_coords):
-            z_position = t_idx + 1
-            time_label = time_labels[t_idx] if t_idx < len(time_labels) else f"T{t}"
-            
-            # Add time axis label
+        # 3. ADD TIME AXIS LABELS AND STYLING
+        fig.update_layout(
+            title={
+                'text': f'{title} - {len(valid_cubes)} Vegetation Clusters',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 16}
+            },
+            scene=dict(
+                xaxis_title='X Coordinate (pixels)',
+                yaxis_title='Y Coordinate (pixels)',
+                zaxis_title='Time Step',
+                camera=dict(
+                    eye=dict(x=1.5, y=1.5, z=1.5)
+                ),
+                aspectmode='cube'
+            ),
+            width=1000,
+            height=800,
+            margin=dict(l=0, r=0, t=50, b=0)
+        )
+        
+        # Add annotations for time axis
+        for i in range(0, max_time_steps, max(1, max_time_steps//5)):
             fig.add_trace(go.Scatter3d(
-                x=[x_max + 2],
-                y=[y_max],
-                z=[z_position],
+                x=[x_min],
+                y=[y_min],
+                z=[i + 1],
                 mode='markers+text',
-                marker=dict(size=8, color='black', symbol='diamond'),
-                text=[time_label],
-                textposition='middle right',
+                marker=dict(size=1, color='black'),
+                text=[time_labels[i]],
+                textposition='middle left',
                 showlegend=False,
                 hoverinfo='skip'
             ))
         
-        # 4. UPDATE LAYOUT FOR 3D VISUALIZATION
-        fig.update_layout(
-            title=dict(
-                text=f"{title}<br><sub>X,Y=Coordinates | Z=Time | Color=NDVI | Size=Vegetation Density</sub>",
-                x=0.5
-            ),
-            scene=dict(
-                xaxis=dict(
-                    title='X Coordinate (Longitude)',
-                    backgroundcolor='rgba(0,0,0,0)',
-                    gridcolor='lightgray',
-                    showbackground=True,
-                    zerolinecolor='gray'
-                ),
-                yaxis=dict(
-                    title='Y Coordinate (Latitude)', 
-                    backgroundcolor='rgba(0,0,0,0)',
-                    gridcolor='lightgray',
-                    showbackground=True,
-                    zerolinecolor='gray'
-                ),
-                zaxis=dict(
-                    title='Time Progression →',
-                    backgroundcolor='rgba(0,0,0,0)',
-                    gridcolor='lightgray',
-                    showbackground=True,
-                    zerolinecolor='gray',
-                    range=[0, max_time_steps + 1]
-                ),
-                bgcolor='rgba(240,240,240,0.1)',
-                camera=dict(
-                    eye=dict(x=1.8, y=1.8, z=1.5),
-                    center=dict(x=0, y=0, z=0.2)
-                ),
-                aspectmode='manual',
-                aspectratio=dict(x=1, y=1, z=0.8)
-            ),
-            width=1200,
-            height=900,
-            hovermode='closest',
-            legend=dict(
-                x=0.02,
-                y=0.98,
-                bgcolor='rgba(255,255,255,0.8)',
-                bordercolor='black',
-                borderwidth=1
-            )
-        )
-        
-        # Add annotation explaining the visualization
-        fig.add_annotation(
-            text="🌱 Each cube = 1 pixel for 1 year | Greener = Higher NDVI | Basemap shows spatial context",
-            xref="paper", yref="paper",
-            x=0.5, y=0.02,
-            showarrow=False,
-            font=dict(size=12, color="darkgreen"),
-            bgcolor="rgba(255,255,255,0.8)",
-            bordercolor="green",
-            borderwidth=1
-        )
-        
-        # Save as HTML
+        # Save the plot
         output_file = self.output_dir / filename
         pyo.plot(fig, filename=str(output_file), auto_open=False)
-        print(f"🎯 3D pixel evolution visualization saved to: {output_file}")
-        print(f"   📊 Shows {len(sampled_pixels)} pixels over {max_time_steps} time steps")
-        print(f"   🌍 Basemap shows NDVI spatial context on X,Y plane")
-        print(f"   📈 Z-axis shows temporal evolution")
         
-        return fig
+        print(f"3D spatiotemporal visualization saved to: {output_file}")
+        return str(output_file)
     
     def create_interactive_statistics_dashboard(self, cubes: List[Dict], filename: str, title: str = "Vegetation Statistics"):
         """
@@ -751,7 +709,7 @@ class InteractiveVisualization:
         cube_data = []
         for cube in cubes:
             ndvi_profile = cube.get('ndvi_profile', [])
-            if ndvi_profile:
+            if self._has_valid_ndvi_profile(cube):
                 max_ndvi = np.max(ndvi_profile)
                 min_ndvi = np.min(ndvi_profile)
                 ndvi_range = max_ndvi - min_ndvi

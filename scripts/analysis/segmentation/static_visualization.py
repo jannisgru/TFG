@@ -50,6 +50,26 @@ class StaticVisualization:
         else:
             return []
     
+    def _has_valid_ndvi_profile(self, cube: Dict) -> bool:
+        """Check if cube has a valid NDVI profile."""
+        ndvi_profile = cube.get('ndvi_profile')
+        if ndvi_profile is None:
+            return False
+        
+        # Handle numpy arrays
+        if isinstance(ndvi_profile, np.ndarray):
+            return ndvi_profile.size > 0
+        
+        # Handle lists
+        if isinstance(ndvi_profile, list):
+            return len(ndvi_profile) > 0
+        
+        # For other types, try to check length
+        try:
+            return len(ndvi_profile) > 0
+        except (TypeError, AttributeError):
+            return False
+
     def _has_valid_pixels(self, cube: Dict) -> bool:
         """Check if cube has valid pixel data."""
         return len(self._get_pixels_safely(cube)) > 0
@@ -132,7 +152,7 @@ class StaticVisualization:
         cbar.set_label('Seasonality Score')
         
         # Panel 5: Time series sample
-        valid_cubes = [cube for cube in cubes if cube.get('ndvi_profile') and len(cube['ndvi_profile']) > 0]
+        valid_cubes = [cube for cube in cubes if self._has_valid_ndvi_profile(cube)]
         
         if valid_cubes:
             top_cubes = sorted(valid_cubes, key=lambda x: x.get('seasonality_score', 0), reverse=True)[:5]
@@ -274,7 +294,7 @@ Highest NDVI: {max(cubes, key=lambda x: x['mean_ndvi'])['mean_ndvi']:.3f}"""
     def create_temporal_analysis(self, cubes: List[Dict], data: Any, filename: str, municipality_name: str):
         """Create temporal analysis plots."""
         
-        valid_cubes = [cube for cube in cubes if cube.get('ndvi_profile') and len(cube['ndvi_profile']) > 0]
+        valid_cubes = [cube for cube in cubes if self._has_valid_ndvi_profile(cube)]
         
         if not valid_cubes:
             print("Warning: No temporal data available")

@@ -388,8 +388,20 @@ class VegetationSegmenter:
         
         try:
             # Import visualization modules
-            from .interactive_visualization import InteractiveVisualization
-            from .static_visualization import StaticVisualization
+            try:
+                from .interactive_visualization import InteractiveVisualization
+                from .static_visualization import StaticVisualization
+            except ImportError:
+                # Try direct imports if relative imports fail
+                import sys
+                import os
+                
+                # Add current directory to path
+                current_dir = Path(__file__).parent
+                sys.path.insert(0, str(current_dir))
+                
+                from interactive_visualization import InteractiveVisualization
+                from static_visualization import StaticVisualization
             
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
