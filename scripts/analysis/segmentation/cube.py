@@ -6,14 +6,16 @@ in the segmentation algorithm.
 """
 
 import numpy as np
-from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional, Set
+from collections import defaultdict
+import rtree.index  # For spatial indexing - install with: pip install rtree
 
 
 @dataclass
 class STCube:
     """
-    Represents a spatiotemporal cube (memory-efficient version).
+    Represents a spatiotemporal cube.
     
     A spatiotemporal cube is a collection of pixels that are:
     - Spatially connected (2D footprint)
@@ -22,7 +24,7 @@ class STCube:
     """
     id: int
     temporal_extent: Tuple[int, int]  # (start_time, end_time)
-    pixels: List[Tuple[int, int]]  # List of (y, x) coordinates
+    pixels: Set[Tuple[int, int]]  # Set for O(1) lookups and automatic deduplication
     spectral_signature: np.ndarray  # Mean spectral values over time
     heterogeneity: float
     area: int
@@ -30,18 +32,31 @@ class STCube:
     compactness: float
     smoothness: float
     temporal_variance: float
-    ndvi_profile: Optional[np.ndarray] = None  # NDVI time series profile
+    ndvi_profile: Optional[np.ndarray] = None
+    _bbox: Optional[Tuple[int, int, int, int]] = field(default=None, init=False)  # Cached bbox
+    
+    def __post_init__(self):
+        """Convert pixels to set if it's a list"""
+        if isinstance(self.pixels, list):
+            self.pixels = set(self.pixels)
+        self.area = len(self.pixels)  # Ensure area matches pixel count
     
     @property
     def spatial_extent(self) -> Optional[Tuple[int, int, int, int]]:
-        """Calculate spatial extent on demand to save memory"""
+        """Calculate spatial extent with caching"""
+        if self._bbox is None:
+            self._bbox = self._calculate_bbox()
+        return self._bbox
+    
+    def _calculate_bbox(self) -> Optional[Tuple[int, int, int, int]]:
+        """Calculate bounding box coordinates"""
         if not self.pixels:
             return None
-        min_y = min(p[0] for p in self.pixels)
-        max_y = max(p[0] for p in self.pixels)
-        min_x = min(p[1] for p in self.pixels)
-        max_x = max(p[1] for p in self.pixels)
-        return (min_y, max_y, min_x, max_x)
+        
+        y_coords = [p[0] for p in self.pixels]
+        x_coords = [p[1] for p in self.pixels]
+        
+        return (min(y_coords), max(y_coords), min(x_coords), max(x_coords))
     
     @property
     def duration(self) -> int:
@@ -60,32 +75,23 @@ class STCube:
     
     def get_bounding_box(self) -> Tuple[int, int, int, int]:
         """Get bounding box coordinates (min_y, max_y, min_x, max_x)"""
-        if not self.pixels:
-            return (0, 0, 0, 0)
-        
-        y_coords = [p[0] for p in self.pixels]
-        x_coords = [p[1] for p in self.pixels]
-        
-        return (min(y_coords), max(y_coords), min(x_coords), max(x_coords))
+        bbox = self.spatial_extent
+        return bbox if bbox else (0, 0, 0, 0)
     
     def overlaps_spatially(self, other: 'STCube', margin: int = 1) -> bool:
         """
-        Check if this cube spatially overlaps with another cube.
-        
-        Args:
-            other: Another STCube to check overlap with
-            margin: Spatial margin for overlap detection
-            
-        Returns:
-            True if cubes overlap spatially
+        Check if this cube spatially overlaps with another cube using bounding boxes.
         """
         bbox1 = self.get_bounding_box()
         bbox2 = other.get_bounding_box()
         
-        # Expand bounding boxes by margin
+        if not bbox1 or not bbox2:
+            return False
+        
         min_y1, max_y1, min_x1, max_x1 = bbox1
         min_y2, max_y2, min_x2, max_x2 = bbox2
         
+        # Expand first bbox by margin
         min_y1 -= margin
         max_y1 += margin
         min_x1 -= margin
@@ -95,17 +101,12 @@ class STCube:
         return not (max_y1 < min_y2 or max_y2 < min_y1 or 
                    max_x1 < min_x2 or max_x2 < min_x1)
     
+    def overlaps_spatially_exact(self, other: 'STCube') -> bool:
+        """Check for exact pixel overlap (more expensive but precise)"""
+        return bool(self.pixels.intersection(other.pixels))
+    
     def overlaps_temporally(self, other: 'STCube', margin: int = 0) -> bool:
-        """
-        Check if this cube temporally overlaps with another cube.
-        
-        Args:
-            other: Another STCube to check overlap with
-            margin: Temporal margin for overlap detection
-            
-        Returns:
-            True if cubes overlap temporally
-        """
+        """Check if this cube temporally overlaps with another cube."""
         start1, end1 = self.temporal_extent
         start2, end2 = other.temporal_extent
         
@@ -117,17 +118,9 @@ class STCube:
         return not (end1 < start2 or end2 < start1)
     
     def is_adjacent_to(self, other: 'STCube') -> bool:
-        """
-        Check if this cube is spatially or temporally adjacent to another cube.
-        
-        Args:
-            other: Another STCube to check adjacency with
-            
-        Returns:
-            True if cubes are adjacent
-        """
+        """Check if this cube is spatially or temporally adjacent to another cube."""
         # Check spatial adjacency (with 1-pixel margin)
-        spatially_adjacent = self.overlaps_spatially(other, margin=1)
+        spatially_close = self.overlaps_spatially(other, margin=1)
         
         # Check temporal adjacency
         temporally_adjacent = (
@@ -135,46 +128,41 @@ class STCube:
             abs(other.temporal_extent[1] - self.temporal_extent[0]) <= 1
         )
         
-        return spatially_adjacent and temporally_adjacent
+        return spatially_close and temporally_adjacent
     
     def merge_with(self, other: 'STCube', new_id: int) -> 'STCube':
         """
-        Create a new cube by merging this cube with another.
-        
-        Args:
-            other: Another STCube to merge with
-            new_id: ID for the new merged cube
-            
-        Returns:
-            New STCube representing the merged result
+        Create a new cube by merging this cube with another (improved logic).
         """
-        # Combine properties
-        combined_pixels = self.pixels + other.pixels
+        # Combine pixels (set automatically handles duplicates)
+        combined_pixels = self.pixels.union(other.pixels)
+        
+        # Combine temporal extent
         combined_time_range = (
             min(self.temporal_extent[0], other.temporal_extent[0]),
             max(self.temporal_extent[1], other.temporal_extent[1])
         )
         
-        # Combine spectral signatures
-        combined_signature = np.concatenate([self.spectral_signature, other.spectral_signature])
+        # Compute area-weighted average for spectral signature
+        total_area = len(combined_pixels)
+        w1, w2 = len(self.pixels) / total_area, len(other.pixels) / total_area
+        combined_signature = w1 * self.spectral_signature + w2 * other.spectral_signature
         
-        # Combine NDVI profiles if available
+        # Combine NDVI profiles
         combined_ndvi_profile = None
         if self.ndvi_profile is not None and other.ndvi_profile is not None:
-            combined_ndvi_profile = np.concatenate([self.ndvi_profile, other.ndvi_profile])
+            combined_ndvi_profile = w1 * self.ndvi_profile + w2 * other.ndvi_profile
         elif self.ndvi_profile is not None:
             combined_ndvi_profile = self.ndvi_profile
         elif other.ndvi_profile is not None:
             combined_ndvi_profile = other.ndvi_profile
         
-        # Calculate weighted averages for scalar properties
-        total_area = self.area + other.area
-        combined_heterogeneity = (
-            (self.heterogeneity * self.area + other.heterogeneity * other.area) / total_area
-        )
-        combined_temporal_variance = (
-            (self.temporal_variance * self.area + other.temporal_variance * other.area) / total_area
-        )
+        # Calculate area-weighted averages for scalar properties
+        combined_heterogeneity = w1 * self.heterogeneity + w2 * other.heterogeneity
+        combined_temporal_variance = w1 * self.temporal_variance + w2 * other.temporal_variance
+        combined_perimeter = self.perimeter + other.perimeter  # Approximation
+        combined_compactness = w1 * self.compactness + w2 * other.compactness
+        combined_smoothness = w1 * self.smoothness + w2 * other.smoothness
         
         # Create merged cube
         merged_cube = STCube(
@@ -184,14 +172,18 @@ class STCube:
             spectral_signature=combined_signature,
             heterogeneity=combined_heterogeneity,
             area=total_area,
-            perimeter=0.0,  # Will be calculated if needed
-            compactness=0.0,  # Will be calculated if needed
-            smoothness=0.0,  # Will be calculated if needed
+            perimeter=combined_perimeter,
+            compactness=combined_compactness,
+            smoothness=combined_smoothness,
             temporal_variance=combined_temporal_variance,
             ndvi_profile=combined_ndvi_profile
         )
         
         return merged_cube
+    
+    def invalidate_cache(self):
+        """Invalidate cached computations when pixels change"""
+        self._bbox = None
     
     def __repr__(self) -> str:
         return (f"STCube(id={self.id}, area={self.area}, "
@@ -202,13 +194,34 @@ class STCube:
 class CubeCollection:
     """
     Utility class for managing collections of STCubes.
-    
-    Provides efficient operations for finding neighbors, spatial queries, etc.
+
+    Uses spatial indexing for efficient neighbor queries.
     """
     
     def __init__(self, cubes: List[STCube]):
         self.cubes = cubes
         self._cube_dict = {cube.id: cube for cube in cubes}
+        self._spatial_index = None
+        self._temporal_index = None
+        self._build_indices()
+    
+    def _build_indices(self):
+        """Build spatial and temporal indices for efficient queries"""
+        # Build spatial R-tree index
+        self._spatial_index = rtree.index.Index()
+        for cube in self.cubes:
+            bbox = cube.get_bounding_box()
+            if bbox != (0, 0, 0, 0):  # Valid bbox
+                min_y, max_y, min_x, max_x = bbox
+                # rtree expects (minx, miny, maxx, maxy)
+                self._spatial_index.insert(cube.id, (min_x, min_y, max_x, max_y))
+        
+        # Build temporal index (simple dict grouping)
+        self._temporal_index = defaultdict(list)
+        for cube in self.cubes:
+            start, end = cube.temporal_extent
+            for t in range(start, end + 1):
+                self._temporal_index[t].append(cube)
     
     def __len__(self) -> int:
         return len(self.cubes)
@@ -220,99 +233,143 @@ class CubeCollection:
         """Get cube by ID"""
         return self._cube_dict.get(cube_id)
     
-    def get_spatial_neighbors(self, cube: STCube, max_neighbors: int = 10) -> List[STCube]:
+    def get_spatial_neighbors(self, cube: STCube, max_neighbors: int = 10, 
+                            margin: int = 3) -> List[STCube]:
         """
-        Find spatial neighbors of a cube.
+        Find spatial neighbors using spatial index (much faster).
+        """
+        bbox = cube.get_bounding_box()
+        if bbox == (0, 0, 0, 0):
+            return []
         
-        Args:
-            cube: The cube to find neighbors for
-            max_neighbors: Maximum number of neighbors to return
-            
-        Returns:
-            List of neighboring cubes
-        """
+        min_y, max_y, min_x, max_x = bbox
+        
+        # Expand search area by margin
+        search_bbox = (min_x - margin, min_y - margin, 
+                      max_x + margin, max_y + margin)
+        
+        # Query spatial index
+        candidate_ids = list(self._spatial_index.intersection(search_bbox))
+        
+        # Filter out self and get actual cubes
         neighbors = []
-        
-        for other_cube in self.cubes:
-            if other_cube.id != cube.id and cube.overlaps_spatially(other_cube, margin=3):
-                neighbors.append(other_cube)
-                
-                if len(neighbors) >= max_neighbors:
-                    break
+        for cube_id in candidate_ids:
+            if cube_id != cube.id:
+                neighbor = self._cube_dict.get(cube_id)
+                if neighbor and len(neighbors) < max_neighbors:
+                    neighbors.append(neighbor)
         
         return neighbors
     
-    def get_temporal_neighbors(self, cube: STCube) -> List[STCube]:
-        """
-        Find temporal neighbors of a cube.
+    def get_temporal_neighbors(self, cube: STCube, margin: int = 1) -> List[STCube]:
+        """Find temporal neighbors using temporal index."""
+        start, end = cube.temporal_extent
+        neighbors = set()
         
-        Args:
-            cube: The cube to find neighbors for
-            
-        Returns:
-            List of temporally neighboring cubes
-        """
-        neighbors = []
+        # Search in extended temporal range
+        for t in range(start - margin, end + margin + 1):
+            for temporal_cube in self._temporal_index.get(t, []):
+                if (temporal_cube.id != cube.id and 
+                    cube.overlaps_spatially(temporal_cube)):
+                    neighbors.add(temporal_cube)
         
-        for other_cube in self.cubes:
-            if (other_cube.id != cube.id and 
-                cube.overlaps_temporally(other_cube, margin=1) and
-                cube.overlaps_spatially(other_cube)):
-                neighbors.append(other_cube)
-        
-        return neighbors
+        return list(neighbors)
     
     def get_adjacent_cubes(self, cube: STCube) -> List[STCube]:
-        """
-        Find all adjacent cubes (spatially and temporally).
+        """Find all adjacent cubes using indices."""
+        # Get spatial candidates first
+        spatial_candidates = self.get_spatial_neighbors(cube, max_neighbors=50, margin=1)
         
-        Args:
-            cube: The cube to find adjacent cubes for
-            
-        Returns:
-            List of adjacent cubes
-        """
+        # Filter for actual adjacency
         adjacent = []
-        
-        for other_cube in self.cubes:
-            if other_cube.id != cube.id and cube.is_adjacent_to(other_cube):
-                adjacent.append(other_cube)
+        for candidate in spatial_candidates:
+            if cube.is_adjacent_to(candidate):
+                adjacent.append(candidate)
         
         return adjacent
     
     def remove_cubes(self, cube_ids: List[int]):
-        """Remove cubes with specified IDs"""
-        self.cubes = [cube for cube in self.cubes if cube.id not in cube_ids]
+        """Remove cubes and rebuild indices"""
+        cube_ids_set = set(cube_ids)
+        self.cubes = [cube for cube in self.cubes if cube.id not in cube_ids_set]
         self._cube_dict = {cube.id: cube for cube in self.cubes}
+        self._build_indices()  # Rebuild indices
     
     def add_cube(self, cube: STCube):
-        """Add a new cube to the collection"""
+        """Add a new cube and update indices"""
         self.cubes.append(cube)
         self._cube_dict[cube.id] = cube
+        
+        # Update spatial index
+        bbox = cube.get_bounding_box()
+        if bbox != (0, 0, 0, 0):
+            min_y, max_y, min_x, max_x = bbox
+            self._spatial_index.insert(cube.id, (min_x, min_y, max_x, max_y))
+        
+        # Update temporal index
+        start, end = cube.temporal_extent
+        for t in range(start, end + 1):
+            self._temporal_index[t].append(cube)
     
     def get_largest_cubes(self, n: int = 10) -> List[STCube]:
         """Get the n largest cubes by area"""
-        return sorted(self.cubes, key=lambda c: c.area, reverse=True)[:n]
+        if not self.cubes:
+            return []
+        
+        areas = np.array([cube.area for cube in self.cubes])
+        largest_indices = np.argpartition(areas, -min(n, len(areas)))[-n:]
+        largest_indices = largest_indices[np.argsort(areas[largest_indices])[::-1]]
+        
+        return [self.cubes[i] for i in largest_indices]
     
     def get_stats(self) -> dict:
-        """Get basic statistics about the cube collection"""
+        """Get basic statistics about the cube collection (vectorized)"""
         if not self.cubes:
             return {}
         
-        areas = [cube.area for cube in self.cubes]
-        durations = [cube.duration for cube in self.cubes]
-        heterogeneities = [cube.heterogeneity for cube in self.cubes 
-                          if not np.isinf(cube.heterogeneity)]
+        # Vectorized computations
+        areas = np.array([cube.area for cube in self.cubes])
+        durations = np.array([cube.duration for cube in self.cubes])
+        heterogeneities = np.array([cube.heterogeneity for cube in self.cubes 
+                                  if not np.isinf(cube.heterogeneity)])
         
-        return {
+        stats = {
             'n_cubes': len(self.cubes),
-            'total_area': sum(areas),
-            'mean_area': np.mean(areas),
-            'std_area': np.std(areas),
-            'min_area': min(areas),
-            'max_area': max(areas),
-            'mean_duration': np.mean(durations),
-            'std_duration': np.std(durations),
-            'mean_heterogeneity': np.mean(heterogeneities) if heterogeneities else 0,
-            'std_heterogeneity': np.std(heterogeneities) if heterogeneities else 0,
+            'total_area': int(np.sum(areas)),
+            'mean_area': float(np.mean(areas)),
+            'std_area': float(np.std(areas)),
+            'min_area': int(np.min(areas)),
+            'max_area': int(np.max(areas)),
+            'mean_duration': float(np.mean(durations)),
+            'std_duration': float(np.std(durations)),
         }
+        
+        if len(heterogeneities) > 0:
+            stats.update({
+                'mean_heterogeneity': float(np.mean(heterogeneities)),
+                'std_heterogeneity': float(np.std(heterogeneities)),
+            })
+        else:
+            stats.update({
+                'mean_heterogeneity': 0.0,
+                'std_heterogeneity': 0.0,
+            })
+        
+        return stats
+    
+    def get_cubes_in_region(self, bbox: Tuple[int, int, int, int], 
+                           time_range: Optional[Tuple[int, int]] = None) -> List[STCube]:
+        """Get all cubes that intersect with a spatial bounding box and optional time range"""
+        min_y, max_y, min_x, max_x = bbox
+        search_bbox = (min_x, min_y, max_x, max_y)
+        
+        candidate_ids = list(self._spatial_index.intersection(search_bbox))
+        candidates = [self._cube_dict[cube_id] for cube_id in candidate_ids]
+        
+        if time_range:
+            start_time, end_time = time_range
+            candidates = [cube for cube in candidates 
+                         if cube.temporal_extent[0] <= end_time and 
+                            cube.temporal_extent[1] >= start_time]
+        
+        return candidates

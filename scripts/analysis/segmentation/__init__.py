@@ -9,6 +9,7 @@ Main Components:
 - VegetationSegmentationParameters: Simplified parameter structure
 - STCube: Individual spatiotemporal cube representation
 - InteractiveVisualization: HTML-based Plotly visualizations
+- StaticVisualization: Publication-ready matplotlib visualizations
 
 Main Function:
 - segment_vegetation: Run vegetation-focused NDVI clustering segmentation
@@ -30,6 +31,7 @@ from .base import VegetationSegmentationParameters
 from .cube import STCube
 from .initializers import VegetationNDVIClusteringInitializer
 from .interactive_visualization import InteractiveVisualization
+from .static_visualization import StaticVisualization
 
 # Import main function for easy access
 from .segmentation_main import segment_vegetation
@@ -43,7 +45,8 @@ __all__ = [
     'STCube',
     'VegetationNDVIClusteringInitializer',
     'InteractiveVisualization',
+    'StaticVisualization',
 ]
 
-__version__ = '3.0.0-vegetation'
+__version__ = '3.1.0-vegetation-enhanced'
 __author__ = 'Vegetation Segmentation Team'
