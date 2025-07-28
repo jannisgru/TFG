@@ -5,11 +5,22 @@ This module defines the core STCube class that represents a spatiotemporal cube
 in the segmentation algorithm.
 """
 
+# ==== CONFIGURABLE PARAMETERS ====
+DEFAULT_SPATIAL_MARGIN = 1          # Default spatial margin for overlap checks
+DEFAULT_TEMPORAL_MARGIN = 0         # Default temporal margin for overlap checks
+DEFAULT_MAX_NEIGHBORS = 10          # Default maximum neighbors for spatial queries
+DEFAULT_SEARCH_MARGIN = 3           # Default margin for spatial neighbor search
+# ================================
+
 import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Set
 from collections import defaultdict
 import rtree.index  # For spatial indexing - install with: pip install rtree
+from loguru import logger
+import warnings
+
+warnings.filterwarnings('ignore')
 
 
 @dataclass

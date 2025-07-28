@@ -6,12 +6,22 @@ This script creates static visualizations using Matplotlib for
 vegetation-focused ST-cube segmentation results.
 """
 
+# ==== CONFIGURABLE PARAMETERS ====
+DEFAULT_OUTPUT_DIRECTORY = "outputs/static_vegetation"    # Default output directory
+DEFAULT_FIGURE_SIZE = (18, 12)                           # Default figure size
+DEFAULT_DPI = 300                                        # Default DPI for saved figures
+DEFAULT_COLOR_MAP = "Set3"                               # Default colormap
+DEFAULT_GRID_ALPHA = 0.3                                # Default grid transparency
+# ================================
+
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import pandas as pd
 import warnings
+from loguru import logger
+
 warnings.filterwarnings('ignore')
 
 # Set style
@@ -23,7 +33,7 @@ class StaticVisualization:
     Static visualization generator for vegetation ST-cube segmentation results.
     """
     
-    def __init__(self, output_directory: str = "outputs/static_vegetation"):
+    def __init__(self, output_directory: str = DEFAULT_OUTPUT_DIRECTORY):
         """Initialize the static visualization generator."""
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,7 +89,7 @@ class StaticVisualization:
                                        data: Any, 
                                        municipality_name: str = "Unknown") -> Dict[str, str]:
         """Create all static visualizations for vegetation clusters."""
-        print(f"Creating static visualizations for {municipality_name}...")
+        logger.info(f"Creating static visualizations for {municipality_name}...")
         
         visualizations = {}
         
@@ -99,10 +109,10 @@ class StaticVisualization:
             self.create_temporal_analysis(cubes, data, temporal_file, municipality_name)
             visualizations["temporal_analysis"] = str(self.output_dir / temporal_file)
             
-            print(f"All static visualizations created successfully in: {self.output_dir}")
+            logger.success(f"All static visualizations created successfully in: {self.output_dir}")
             
         except Exception as e:
-            print(f"Error creating static visualizations: {str(e)}")
+            logger.error(f"Error creating static visualizations: {str(e)}")
             import traceback
             traceback.print_exc()
         

@@ -9,30 +9,31 @@ Key optimizations:
 5. Better error handling and logging
 """
 
+# ==== CONFIGURABLE PARAMETERS ====
+DEFAULT_MAX_PIXELS_FOR_SAMPLING = 50000    # Maximum pixels to sample for clustering
+DEFAULT_SEARCH_RADIUS = 15                 # Search radius for spatial neighbors
+DEFAULT_MIN_CLUSTER_CONNECTIVITY = 0.8     # Minimum connectivity for valid clusters
+DEFAULT_EPS_SEARCH_ATTEMPTS = 5            # Maximum attempts to find optimal eps
+DEFAULT_MIN_SAMPLES_RATIO = 0.01           # Minimum samples as ratio of total pixels
+# ================================
+
 import numpy as np
 import xarray as xr
 from typing import List, Tuple, Optional
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 from scipy.spatial import cKDTree
+from loguru import logger
 import warnings
+from ..base import VegetationSegmentationParameters
+from ..cube import STCube
 
-# Import handling for both package and direct execution
-try:
-    from ..base import VegetationSegmentationParameters
-    from ..cube import STCube
-except ImportError:
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-    from base import VegetationSegmentationParameters
-    from cube import STCube
-
+warnings.filterwarnings('ignore')
 
 class VegetationNDVIClusteringInitializer:
     """
-    Optimized initialization of ST-cubes by clustering nearby pixels with similar NDVI patterns.
-    
+    Initialization of ST-cubes by clustering nearby pixels with similar NDVI patterns.
+
     Key improvements:
     - Memory-efficient processing with chunking
     - Spatial indexing for faster connectivity checks
@@ -70,10 +71,10 @@ class VegetationNDVIClusteringInitializer:
         Returns:
             List of initialized STCube objects
         """
-        print(f"Initializing vegetation ST-cubes using optimized NDVI clustering...")
-        print(f"Parameters: max_distance={self.parameters.max_spatial_distance}, "
-              f"min_vegetation_ndvi={self.parameters.min_vegetation_ndvi}, "
-              f"target_clusters={self.parameters.n_clusters}")
+        logger.info(f"Initializing vegetation ST-cubes using NDVI clustering...")
+        logger.info(f"Parameters: max_distance={self.parameters.max_spatial_distance}, "
+                   f"min_vegetation_ndvi={self.parameters.min_vegetation_ndvi}, "
+                   f"target_clusters={self.parameters.n_clusters}")
         
         if 'ndvi' not in data.variables:
             raise ValueError("NDVI not found in dataset. Cannot proceed with vegetation clustering.")
@@ -82,12 +83,12 @@ class VegetationNDVIClusteringInitializer:
         ndvi_profiles, pixel_coords = self._extract_vegetation_ndvi_profiles(data, valid_mask)
         
         if len(ndvi_profiles) < self.parameters.min_cube_size:
-            print(f"Warning: Too few vegetation pixels ({len(ndvi_profiles)}). "
-                  f"Need at least {self.parameters.min_cube_size}.")
+            logger.warning(f"Too few vegetation pixels ({len(ndvi_profiles)}). "
+                          f"Need at least {self.parameters.min_cube_size}.")
             return []
         
-        # Step 2: Perform optimized spatial clustering
-        cluster_labels = self._perform_optimized_clustering(ndvi_profiles, pixel_coords)
+        # Step 2: Perform spatial clustering
+        cluster_labels = self._perform_clustering(ndvi_profiles, pixel_coords)
         
         # Step 3: Post-process clusters for quality
         cluster_labels = self._post_process_clusters(cluster_labels, pixel_coords)
@@ -95,14 +96,14 @@ class VegetationNDVIClusteringInitializer:
         # Step 4: Create cubes from clusters
         cubes = self._create_cubes_from_clusters(data, pixel_coords, cluster_labels, ndvi_profiles)
         
-        print(f"Successfully initialized {len(cubes)} vegetation ST-cubes")
+        logger.success(f"Successfully initialized {len(cubes)} vegetation ST-cubes")
         return cubes
     
     def _extract_vegetation_ndvi_profiles(self, 
                                         data: xr.Dataset, 
                                         valid_mask: np.ndarray) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
-        """Extract NDVI time series profiles for vegetation pixels with optimized memory usage"""
-        print("Extracting NDVI profiles for vegetation pixels...")
+        """Extract NDVI time series profiles for vegetation pixels with memory usage"""
+        logger.info("Extracting NDVI profiles for vegetation pixels...")
         
         # Get NDVI data and handle different shapes
         ndvi_data = data['ndvi'].values
@@ -114,9 +115,9 @@ class VegetationNDVIClusteringInitializer:
         # Get valid pixel coordinates
         valid_coords = np.where(valid_mask)
         n_pixels = len(valid_coords[0])
-        print(f"Processing {n_pixels} valid pixels")
-        
-        # Optimize for target clusters: sample pixels if dataset is very large
+        logger.info(f"Processing {n_pixels} valid pixels")
+
+        # Step 2: Sample pixels if dataset is very large
         sampled_indices = self._get_pixel_sample_indices(n_pixels)
         
         # Extract coordinates and profiles
@@ -137,7 +138,7 @@ class VegetationNDVIClusteringInitializer:
         pixel_coords = [pixel_coords[i] for i in range(len(pixel_coords)) if final_mask[i]]
         
         sampling_info = f" (sampled from {n_pixels})" if len(sampled_indices) < n_pixels else ""
-        print(f"Found {len(ndvi_profiles)} vegetation pixels with NDVI ≥ {self.parameters.min_vegetation_ndvi}{sampling_info}")
+        logger.info(f"Found {len(ndvi_profiles)} vegetation pixels with NDVI ≥ {self.parameters.min_vegetation_ndvi}{sampling_info}")
         
         return ndvi_profiles, pixel_coords
     
@@ -156,16 +157,16 @@ class VegetationNDVIClusteringInitializer:
             # Use systematic sampling for better spatial distribution
             step = n_pixels // max_pixels
             indices = np.arange(0, n_pixels, step)[:max_pixels]
-            print(f"Sampling {len(indices)} pixels (every {step}th pixel) for efficiency")
+            logger.info(f"Sampling {len(indices)} pixels (every {step}th pixel) for efficiency")
             return indices
         
         return np.arange(n_pixels)
-    
-    def _perform_optimized_clustering(self, 
+
+    def _perform_timed_clustering(self, 
                                     ndvi_profiles: np.ndarray, 
                                     pixel_coords: List[Tuple[int, int]]) -> np.ndarray:
         """Perform spatially-aware clustering with improved parameter selection"""
-        print(f"Performing optimized spatial clustering...")
+        logger.info(f"Performing timed spatial clustering...")
         
         if len(ndvi_profiles) == 0:
             return np.array([])
@@ -173,7 +174,7 @@ class VegetationNDVIClusteringInitializer:
         # Prepare features
         combined_features = self._prepare_clustering_features(ndvi_profiles, pixel_coords)
         
-        # Determine optimal clustering parameters
+        # Determine clustering parameters
         eps, min_samples = self._determine_clustering_parameters(combined_features, len(pixel_coords))
         
         # Perform clustering
@@ -183,8 +184,8 @@ class VegetationNDVIClusteringInitializer:
         n_clusters = len(np.unique(cluster_labels[cluster_labels >= 0]))
         n_noise = np.sum(cluster_labels == -1)
         
-        print(f"Clustering results: {n_clusters} clusters, {n_noise} noise points "
-              f"(eps={eps:.3f}, min_samples={min_samples})")
+        logger.info(f"Clustering results: {n_clusters} clusters, {n_noise} noise points "
+                   f"(eps={eps:.3f}, min_samples={min_samples})")
         
         return cluster_labels
     
@@ -299,7 +300,7 @@ class VegetationNDVIClusteringInitializer:
                              cluster_labels: np.ndarray, 
                              pixel_coords: List[Tuple[int, int]]) -> np.ndarray:
         """Post-process clusters to ensure quality and constraints"""
-        print("Post-processing clusters for quality assurance...")
+        logger.info("Post-processing clusters for quality assurance...")
         
         if len(cluster_labels) == 0:
             return cluster_labels
@@ -311,7 +312,7 @@ class VegetationNDVIClusteringInitializer:
         refined_labels = self._refine_clusters(cluster_labels, pixel_coords, spatial_index)
         
         n_final = len(np.unique(refined_labels[refined_labels >= 0]))
-        print(f"Post-processing complete: {n_final} refined clusters")
+        logger.success(f"Post-processing complete: {n_final} refined clusters")
         
         return refined_labels
     
@@ -368,7 +369,7 @@ class VegetationNDVIClusteringInitializer:
                                    cluster_labels: np.ndarray,
                                    ndvi_profiles: np.ndarray) -> List[STCube]:
         """Create STCube objects from clustering results"""
-        print("Creating cubes from refined clusters...")
+        logger.info("Creating cubes from refined clusters...")
         
         cubes = []
         self.cube_id_counter = 0

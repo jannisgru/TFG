@@ -5,6 +5,16 @@ This script provides vegetation-specific NDVI clustering segmentation
 with local spatial constraints for analyzing vegetation patterns.
 """
 
+# ==== CONFIGURABLE PARAMETERS ====
+DEFAULT_MAX_SPATIAL_DISTANCE = 10          # Maximum spatial distance for clustering
+DEFAULT_MIN_VEGETATION_NDVI = 0.4           # Minimum NDVI for vegetation
+DEFAULT_MIN_CUBE_SIZE = 20                  # Minimum pixels per cube
+DEFAULT_NDVI_VARIANCE_THRESHOLD = 0.01      # Filter out static areas
+DEFAULT_CHUNK_SIZE = 1000                   # For memory-efficient processing
+DEFAULT_N_CLUSTERS = 10                     # Number of temporal clusters
+DEFAULT_TEMPORAL_WEIGHT = 0.7               # Weight for temporal vs spatial similarity
+# ================================
+
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -15,23 +25,20 @@ from dataclasses import dataclass
 from tqdm import tqdm
 import gc
 import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 warnings.filterwarnings('ignore')
 
 @dataclass
 class VegetationSegmentationParameters:
     """Parameters for vegetation segmentation."""
-    max_spatial_distance: int = 10
-    min_vegetation_ndvi: float = 0.4
-    min_cube_size: int = 20
-    ndvi_variance_threshold: float = 0.01  # Filter out static areas
-    chunk_size: int = 1000  # For memory-efficient processing
-    n_clusters: int = 10  # Number of temporal clusters
-    temporal_weight: float = 0.7  # Weight for temporal vs spatial similarity
+    max_spatial_distance: int = DEFAULT_MAX_SPATIAL_DISTANCE
+    min_vegetation_ndvi: float = DEFAULT_MIN_VEGETATION_NDVI
+    min_cube_size: int = DEFAULT_MIN_CUBE_SIZE
+    ndvi_variance_threshold: float = DEFAULT_NDVI_VARIANCE_THRESHOLD  # Filter out static areas
+    chunk_size: int = DEFAULT_CHUNK_SIZE  # For memory-efficient processing
+    n_clusters: int = DEFAULT_N_CLUSTERS  # Number of temporal clusters
+    temporal_weight: float = DEFAULT_TEMPORAL_WEIGHT  # Weight for temporal vs spatial similarity
 
 
 class VegetationSegmenter:
@@ -526,7 +533,7 @@ def segment_vegetation(netcdf_path: str,
 if __name__ == "__main__":
     
     # Test the version
-    print("Testing vegetation segmentation...")
+    logger.info("Testing vegetation segmentation...")
     
     data_path = "D:/Uni/TFG/data/processed/landsat_multidimensional_Sant_Marti_Ciutat_Vella.nc"
     municipality = "Sant Martí"
@@ -550,12 +557,12 @@ if __name__ == "__main__":
         output_dir="outputs/vegetation_clustering"
     )
     
-    print(f"\nCompleted! Found {len(vegetation_cubes)} vegetation clusters.")
+    logger.success(f"Completed! Found {len(vegetation_cubes)} vegetation clusters.")
     
     # Print detailed results
     if vegetation_cubes:
-        print("\n=== Cluster Summary ===")
+        logger.info("=== Cluster Summary ===")
         for i, cube in enumerate(vegetation_cubes[:5]):  # Show first 5
-            print(f"Cluster {i+1}: {cube['size']} pixels, "
-                  f"NDVI={cube['mean_ndvi']:.3f}, "
-                  f"Type={cube['vegetation_type']}")
+            logger.info(f"Cluster {i+1}: {cube['size']} pixels, "
+                       f"NDVI={cube['mean_ndvi']:.3f}, "
+                       f"Type={cube['vegetation_type']}")

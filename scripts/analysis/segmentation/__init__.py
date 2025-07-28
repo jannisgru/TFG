@@ -26,23 +26,11 @@ Example Usage:
     
     cubes = segment_vegetation("data.nc", params)
 """
-
 from .base import VegetationSegmentationParameters
 from .cube import STCube
 from .initializers import VegetationNDVIClusteringInitializer
-
-# Import visualization modules with fallback
-try:
-    from .interactive_visualization import InteractiveVisualization
-except ImportError:
-    InteractiveVisualization = None
-
-try:
-    from .static_visualization import StaticVisualization
-except ImportError:
-    StaticVisualization = None
-
-# Import main function for easy access
+from .interactive_visualization import InteractiveVisualization
+from .static_visualization import StaticVisualization
 from .segmentation_main import segment_vegetation
 
 __all__ = [

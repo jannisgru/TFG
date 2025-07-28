@@ -6,6 +6,15 @@ This script creates interactive HTML visualizations using Plotly for
 vegetation-focused ST-cube segmentation results, focusing on spatial patterns and NDVI evolution.
 """
 
+# ==== CONFIGURABLE PARAMETERS ====
+DEFAULT_OUTPUT_DIRECTORY = "outputs/interactive_vegetation"    # Default output directory
+DEFAULT_MAX_CLUSTERS_TO_DISPLAY = 50                          # Maximum clusters to display
+DEFAULT_DOWNSAMPLE_FACTOR = 2                                 # Downsampling factor for large datasets
+DEFAULT_COLOR_PALETTE = "Set3"                                # Default color palette
+DEFAULT_FIGURE_WIDTH = 1200                                   # Default figure width
+DEFAULT_FIGURE_HEIGHT = 800                                   # Default figure height
+# ================================
+
 import numpy as np
 import xarray as xr
 import plotly.graph_objects as go
@@ -16,6 +25,9 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 import pandas as pd
 import warnings
+from scipy.ndimage import zoom
+from loguru import logger
+
 warnings.filterwarnings('ignore')
 
 # Add the scripts directory to Python path
@@ -25,704 +37,407 @@ scripts_dir = Path(__file__).parent.parent.parent
 sys.path.append(str(scripts_dir))
 
 # Import only the cube module to avoid circular imports
-try:
-    from .cube import STCube
-except ImportError:
-    try:
-        from cube import STCube
-    except ImportError:
-        # Define a minimal STCube class for compatibility
-        class STCube:
-            def __init__(self, **kwargs):
-                for k, v in kwargs.items():
-                    setattr(self, k, v)
+from cube import STCube
 
 
 class InteractiveVisualization:
-    """
-    Interactive HTML visualization generator for vegetation ST-cube segmentation results.
+    """Interactive HTML visualization generator for vegetation ST-cube segmentation results."""
     
-    Creates interactive Plotly visualizations including spatial maps, time series,
-    statistics dashboards, and 3D surfaces.
-    """
-    
-    def __init__(self, output_directory: str = "outputs/interactive_vegetation"):
-        """
-        Initialize the visualization generator.
-        
-        Args:
-            output_directory: Directory where HTML files will be saved
-        """
+    def __init__(self, output_directory: str = DEFAULT_OUTPUT_DIRECTORY):
+        """Initialize the visualization generator."""
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.color_palette = px.colors.qualitative.Set3
+        self.color_palette = getattr(px.colors.qualitative, DEFAULT_COLOR_PALETTE)
+    
+    def _extract_safe_data(self, cube: Dict, key: str, default=None):
+        """Safely extract data from cube, handling arrays and lists."""
+        data = cube.get(key, default)
+        if data is None:
+            return default
+        if isinstance(data, np.ndarray):
+            return data.tolist() if data.size > 0 else (default or [])
+        return data if data else (default or [])
     
     def _get_pixels_safely(self, cube: Dict) -> List[Tuple[int, int]]:
-        """Safely extract pixels from cube data, handling different formats."""
-        pixels = cube.get('pixels', [])
-        if pixels is None:
-            return []
-        
-        if isinstance(pixels, np.ndarray):
-            if pixels.size == 0:
-                return []
-            # Convert numpy array to list of tuples
-            if pixels.ndim == 1 and len(pixels) == 2:
-                return [tuple(pixels.tolist())]
-            elif pixels.ndim == 2:
-                return [tuple(row) for row in pixels.tolist()]
-            else:
-                return pixels.tolist()
-        elif isinstance(pixels, list):
-            return pixels
-        else:
-            return []
+        """Extract pixels, prioritizing different possible keys."""
+        for key in ['pixels', 'coordinates']:
+            pixels = self._extract_safe_data(cube, key, [])
+            if pixels:
+                # Handle different formats
+                if isinstance(pixels[0], (list, tuple)) and len(pixels[0]) == 2:
+                    return [tuple(p) for p in pixels]
+                elif len(pixels) == 2 and isinstance(pixels[0], (int, float)):
+                    return [tuple(pixels)]
+        return []
     
-    def _is_empty_array_or_list(self, obj) -> bool:
-        """Check if an object (list, array, etc.) is empty."""
-        if obj is None:
-            return True
-        
-        # Handle numpy arrays
-        if isinstance(obj, np.ndarray):
-            return obj.size == 0
-        
-        # Handle lists and other sequences
-        try:
-            return len(obj) == 0
-        except (TypeError, AttributeError):
-            return True
-
-    def _has_valid_ndvi_profile(self, cube: Dict) -> bool:
-        """Check if cube has a valid NDVI profile."""
-        ndvi_profile = cube.get('ndvi_profile')
-        if ndvi_profile is None:
-            return False
-        
-        # Handle numpy arrays
-        if isinstance(ndvi_profile, np.ndarray):
-            return ndvi_profile.size > 0
-        
-        # Handle lists
-        if isinstance(ndvi_profile, list):
-            return len(ndvi_profile) > 0
-        
-        # For other types, try to check length
-        try:
-            return len(ndvi_profile) > 0
-        except (TypeError, AttributeError):
-            return False
-
-    def _has_valid_pixels(self, cube: Dict) -> bool:
-        """Check if cube has valid pixel data."""
-        return len(self._get_pixels_safely(cube)) > 0
+    def _get_ndvi_profile(self, cube: Dict) -> List[float]:
+        """Extract NDVI profile, checking multiple possible keys."""
+        for key in ['ndvi_profile', 'mean_temporal_profile', 'ndvi_time_series']:
+            profile = self._extract_safe_data(cube, key, [])
+            if profile:
+                return profile
+        return []
+    
+    def _is_valid_cube(self, cube: Dict) -> bool:
+        """Check if cube has both valid pixels and NDVI data."""
+        return len(self._get_pixels_safely(cube)) > 0 and len(self._get_ndvi_profile(cube)) > 0
     
     def create_all_visualizations(self, 
                                 cubes: Union[List[STCube], List[Dict]], 
-                                data: xr.Dataset, 
+                                data: Union[xr.Dataset, str], 
                                 municipality_name: str = "Unknown") -> Dict[str, str]:
-        """
-        Create all visualizations for vegetation clusters.
+        """Create all visualizations for vegetation clusters."""
+        logger.info(f"Creating comprehensive visualizations for {municipality_name}...")
         
-        Args:
-            cubes: List of STCube objects or dictionaries with cluster data
-            data: Original xarray dataset
-            municipality_name: Name of the municipality for titles
-            
-        Returns:
-            Dictionary with visualization names and file paths
-        """
-        print(f"Creating comprehensive visualizations for {municipality_name}...")
-        
-        # Convert dict cubes to appropriate format if needed
+        # Convert and process cube data
         processed_cubes = self._process_cube_data(cubes, data)
-        
         visualizations = {}
         
-        try:
-            # 1. Interactive spatial map
-            spatial_file = f"spatial_map_{municipality_name.replace(' ', '_')}.html"
-            self.create_interactive_spatial_map(processed_cubes, spatial_file, 
-                                              f"Vegetation Clusters - {municipality_name}")
-            visualizations["spatial_map"] = str(self.output_dir / spatial_file)
-            
-            # 2. NDVI time series for each cluster
-            time_series_file = f"ndvi_time_series_{municipality_name.replace(' ', '_')}.html"
-            self.create_interactive_time_series(processed_cubes, data, time_series_file,
-                                              f"NDVI Evolution - {municipality_name}")
-            visualizations["time_series"] = str(self.output_dir / time_series_file)
-            
-            # 3. 3D spatiotemporal visualization
-            print("Creating 3D spatiotemporal visualization...")
-            spatiotemporal_3d_file = f"3d_spatiotemporal_{municipality_name.replace(' ', '_')}.html"
+        # Create all visualizations
+        viz_configs = [
+            ("spatial_map", self.create_interactive_spatial_map, f"Vegetation Clusters - {municipality_name}"),
+            ("time_series", self.create_interactive_time_series, f"NDVI Evolution - {municipality_name}"),
+            ("3d_spatiotemporal", self.create_3d_spatiotemporal_visualization, f"3D Spatiotemporal View - {municipality_name}"),
+            ("statistics", self.create_interactive_statistics_dashboard, f"Vegetation Statistics - {municipality_name}"),
+            ("cluster_analysis", self.create_individual_cluster_analysis, f"Individual Cluster Analysis - {municipality_name}")
+        ]
+        
+        for viz_name, viz_func, title in viz_configs:
+            filename = f"{viz_name}_{municipality_name.replace(' ', '_')}.html"
             try:
-                result = self.create_3d_spatiotemporal_visualization(processed_cubes, data, spatiotemporal_3d_file,
-                                                          f"3D Spatiotemporal View - {municipality_name}")
-                if result is not None:
-                    visualizations["3d_spatiotemporal"] = str(self.output_dir / spatiotemporal_3d_file)
-                    print(f"✅ 3D spatiotemporal visualization created successfully")
+                if viz_name == "time_series" or viz_name == "cluster_analysis" or viz_name == "3d_spatiotemporal":
+                    result = viz_func(processed_cubes, data, filename, title)
                 else:
-                    print(f"❌ 3D spatiotemporal visualization returned None")
+                    result = viz_func(processed_cubes, filename, title)
+                
+                if result is not None:
+                    visualizations[viz_name] = str(self.output_dir / filename)
+                    logger.success(f"{viz_name} created successfully")
+                else:
+                    logger.warning(f"{viz_name} returned None")
             except Exception as e:
-                print(f"❌ Error in 3D spatiotemporal visualization: {str(e)}")
+                logger.error(f"Error in {viz_name}: {str(e)}")
                 import traceback
                 traceback.print_exc()
-            
-            # 4. Statistics dashboard
-            stats_file = f"statistics_dashboard_{municipality_name.replace(' ', '_')}.html"
-            self.create_interactive_statistics_dashboard(processed_cubes, stats_file,
-                                                       f"Vegetation Statistics - {municipality_name}")
-            visualizations["statistics"] = str(self.output_dir / stats_file)
-            
-            # 5. Individual cluster analysis
-            cluster_analysis_file = f"cluster_analysis_{municipality_name.replace(' ', '_')}.html"
-            self.create_individual_cluster_analysis(processed_cubes, data, cluster_analysis_file,
-                                                  f"Individual Cluster Analysis - {municipality_name}")
-            visualizations["cluster_analysis"] = str(self.output_dir / cluster_analysis_file)
-            
-            print(f"All visualizations created successfully in: {self.output_dir}")
-            
-        except Exception as e:
-            print(f"Error creating visualizations: {str(e)}")
-            import traceback
-            traceback.print_exc()
         
+        logger.success(f"All visualizations created successfully in: {self.output_dir}")
         return visualizations
     
-    def _process_cube_data(self, cubes: Union[List[STCube], List[Dict]], data: xr.Dataset) -> List[Dict]:
+    def _process_cube_data(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str]) -> List[Dict]:
         """Process cube data into a consistent format for visualization."""
         processed_cubes = []
+        
+        # Determine time dimension safely
+        time_length = 1
+        if hasattr(data, 'dims') and 'time' in data.dims:
+            time_length = len(data.time)
         
         for i, cube in enumerate(cubes):
             if isinstance(cube, STCube):
                 # Convert STCube to dict format
                 cube_dict = {
                     'id': i,
-                    'pixels': list(cube.pixels) if hasattr(cube, 'pixels') else [],
-                    'area': cube.area if hasattr(cube, 'area') else 0,
-                    'ndvi_profile': cube.ndvi_profile if hasattr(cube, 'ndvi_profile') and cube.ndvi_profile is not None else [],
-                    'mean_ndvi': np.mean(cube.ndvi_profile) if hasattr(cube, 'ndvi_profile') and cube.ndvi_profile is not None else 0.5,
-                    'temporal_extent': cube.temporal_extent if hasattr(cube, 'temporal_extent') else (0, 0),
-                    'heterogeneity': cube.heterogeneity if hasattr(cube, 'heterogeneity') else 0.0,
+                    'pixels': getattr(cube, 'pixels', []),
+                    'area': getattr(cube, 'area', 0),
+                    'ndvi_profile': getattr(cube, 'ndvi_profile', []),
+                    'mean_ndvi': np.mean(getattr(cube, 'ndvi_profile', [0.5])),
+                    'temporal_extent': getattr(cube, 'temporal_extent', (0, 0)),
+                    'heterogeneity': getattr(cube, 'heterogeneity', 0.0),
                     'vegetation_type': 'Unknown',
                     'seasonality_score': 0.0,
                     'trend_score': 0.0
                 }
-            elif isinstance(cube, dict):
-                # Already in dict format, ensure all required keys exist
-                # Get pixels - prioritize coordinates if pixels is empty
-                pixels = cube.get('pixels', [])
-                if self._is_empty_array_or_list(pixels):
-                    pixels = cube.get('coordinates', [])
-                
-                # Get NDVI profile - prioritize mean_temporal_profile for segmentation data
-                ndvi_profile = cube.get('ndvi_profile', [])
-                if ndvi_profile is None or (hasattr(ndvi_profile, '__len__') and len(ndvi_profile) == 0):
-                    ndvi_profile = cube.get('mean_temporal_profile', [])
-                if ndvi_profile is None or (hasattr(ndvi_profile, '__len__') and len(ndvi_profile) == 0):
-                    ndvi_profile = cube.get('ndvi_time_series', [])
+            else:
+                # Process dict format
+                pixels = self._get_pixels_safely(cube)
+                ndvi_profile = self._get_ndvi_profile(cube)
                 
                 cube_dict = {
                     'id': cube.get('id', i),
                     'pixels': pixels,
-                    'area': cube.get('area', cube.get('size', 0)),
+                    'area': cube.get('area', cube.get('size', len(pixels))),
                     'ndvi_profile': ndvi_profile,
-                    'mean_ndvi': cube.get('mean_ndvi', 0.5),
-                    'temporal_extent': cube.get('temporal_extent', (0, len(data.time) if 'time' in data.dims else 1)),
+                    'mean_ndvi': cube.get('mean_ndvi', np.mean(ndvi_profile) if ndvi_profile else 0.5),
+                    'temporal_extent': cube.get('temporal_extent', (0, time_length)),
                     'heterogeneity': cube.get('heterogeneity', cube.get('temporal_variance', 0.0)),
                     'vegetation_type': cube.get('vegetation_type', 'Unknown'),
                     'seasonality_score': cube.get('seasonality_score', 0.0),
                     'trend_score': cube.get('trend_score', 0.0)
                 }
-            else:
-                continue
                 
             processed_cubes.append(cube_dict)
         
         return processed_cubes
     
     def create_interactive_spatial_map(self, cubes: List[Dict], filename: str, title: str = "Vegetation Clusters"):
-        """
-        Create an interactive spatial map showing vegetation cluster boundaries and NDVI patterns.
-        
-        Args:
-            cubes: List of processed cube dictionaries
-            filename: Output HTML filename
-            title: Plot title
-        """
+        """Create an interactive spatial map showing vegetation cluster boundaries and NDVI patterns."""
         print(f"Creating interactive spatial map: {filename}")
         
         if not cubes:
             print("Warning: No cubes to visualize")
             return None
         
-        # Get spatial extent
+        # Get all pixels and spatial extent
         all_pixels = []
         for cube in cubes:
-            pixels = cube.get('pixels', [])
-            if pixels is not None and len(pixels) > 0:
-                # Handle both list of tuples and numpy arrays
-                if isinstance(pixels, np.ndarray):
-                    if pixels.size > 0:
-                        all_pixels.extend(pixels.tolist() if pixels.ndim > 1 else [pixels.tolist()])
-                else:
-                    all_pixels.extend(pixels)
+            all_pixels.extend(self._get_pixels_safely(cube))
         
         if not all_pixels:
             print("Warning: No valid pixels found in cubes")
             return None
         
-        # Create spatial grid
-        y_coords = [p[0] for p in all_pixels]
-        x_coords = [p[1] for p in all_pixels]
+        y_coords, x_coords = zip(*all_pixels)
+        y_min, y_max, x_min, x_max = min(y_coords), max(y_coords), min(x_coords), max(x_coords)
         
-        y_min, y_max = min(y_coords), max(y_coords)
-        x_min, x_max = min(x_coords), max(x_coords)
-        
-        # Create segmentation map
-        segmentation_map = np.full((y_max - y_min + 1, x_max - x_min + 1), -1, dtype=int)
+        # Create maps
+        seg_map = np.full((y_max - y_min + 1, x_max - x_min + 1), -1, dtype=int)
         ndvi_map = np.full((y_max - y_min + 1, x_max - x_min + 1), np.nan, dtype=float)
         
-        # Fill maps with cube data
+        # Fill maps
         for i, cube in enumerate(cubes):
-            pixels = self._get_pixels_safely(cube)
-            if not pixels:
-                continue
-            
-            for y, x in pixels:
+            for y, x in self._get_pixels_safely(cube):
                 if y_min <= y <= y_max and x_min <= x <= x_max:
-                    segmentation_map[y - y_min, x - x_min] = i
+                    seg_map[y - y_min, x - x_min] = i
                     ndvi_map[y - y_min, x - x_min] = cube['mean_ndvi']
         
-        # Create the plotly figure with subplots
+        # Create figure
         fig = make_subplots(
             rows=1, cols=2,
             subplot_titles=['NDVI Distribution', 'Cluster Boundaries'],
             specs=[[{"type": "heatmap"}, {"type": "scatter"}]]
         )
         
-        # Add NDVI heatmap
-        fig.add_trace(
-            go.Heatmap(
-                z=ndvi_map,
-                x=list(range(x_min, x_max + 1)),
-                y=list(range(y_min, y_max + 1)),
-                colorscale='RdYlGn',
-                name='NDVI',
-                colorbar=dict(title="Mean NDVI", x=0.48),
-                hovertemplate='X: %{x}<br>Y: %{y}<br>NDVI: %{z:.3f}<extra></extra>'
-            ),
-            row=1, col=1
-        )
+        # NDVI heatmap
+        fig.add_trace(go.Heatmap(
+            z=ndvi_map, x=list(range(x_min, x_max + 1)), y=list(range(y_min, y_max + 1)),
+            colorscale='RdYlGn', name='NDVI', colorbar=dict(title="Mean NDVI", x=0.48),
+            hovertemplate='X: %{x}<br>Y: %{y}<br>NDVI: %{z:.3f}<extra></extra>'
+        ), row=1, col=1)
         
-        # Add cluster boundaries as scatter plots
+        # Cluster boundaries
         for i, cube in enumerate(cubes):
             pixels = self._get_pixels_safely(cube)
-            if not pixels:
-                continue
-                
-            color_idx = i % len(self.color_palette)
-            y_coords = [p[0] for p in pixels]
-            x_coords = [p[1] for p in pixels]
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=x_coords,
-                    y=y_coords,
-                    mode='markers',
-                    marker=dict(
-                        size=3,
-                        color=self.color_palette[color_idx],
-                        line=dict(width=1, color='black')
-                    ),
+            if pixels:
+                y_vals, x_vals = zip(*pixels)
+                fig.add_trace(go.Scatter(
+                    x=x_vals, y=y_vals, mode='markers',
+                    marker=dict(size=3, color=self.color_palette[i % len(self.color_palette)], 
+                               line=dict(width=1, color='black')),
                     name=f'Cluster {i} (NDVI: {cube["mean_ndvi"]:.3f})',
                     hovertemplate=f'Cluster {i}<br>Area: {cube["area"]} pixels<br>Mean NDVI: {cube["mean_ndvi"]:.3f}<br>Type: {cube["vegetation_type"]}<extra></extra>',
-                    showlegend=True
-                ),
-                row=1, col=2
-            )
+                ), row=1, col=2)
         
         # Update layout
-        fig.update_layout(
-            title=f'{title}<br>Total Clusters: {len(cubes)}',
-            width=1400,
-            height=600,
-            hovermode='closest'
-        )
+        fig.update_layout(title=f'{title}<br>Total Clusters: {len(cubes)}', width=1400, height=600, hovermode='closest')
+        for col in [1, 2]:
+            fig.update_xaxes(title_text="X Coordinate", row=1, col=col)
+            fig.update_yaxes(title_text="Y Coordinate", row=1, col=col)
         
-        # Update axes
-        fig.update_xaxes(title_text="X Coordinate", row=1, col=1)
-        fig.update_yaxes(title_text="Y Coordinate", row=1, col=1)
-        fig.update_xaxes(title_text="X Coordinate", row=1, col=2)
-        fig.update_yaxes(title_text="Y Coordinate", row=1, col=2)
-        
-        # Save as HTML
-        output_file = self.output_dir / filename
-        pyo.plot(fig, filename=str(output_file), auto_open=False)
-        print(f"Interactive spatial map saved to: {output_file}")
-        
+        # Save
+        pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
+        print(f"Interactive spatial map saved to: {self.output_dir / filename}")
         return fig
     
-    def create_interactive_time_series(self, cubes: List[Dict], data: xr.Dataset, filename: str, title: str = "NDVI Time Series"):
-        """
-        Create an interactive time series plot showing NDVI evolution for each vegetation cube.
-        
-        Args:
-            cubes: List of processed cube dictionaries
-            data: The original xarray dataset with time information
-            filename: Output HTML filename
-            title: Plot title
-        """
+    def create_interactive_time_series(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "NDVI Time Series"):
+        """Create an interactive time series plot showing NDVI evolution for each vegetation cube."""
         print(f"Creating interactive time series: {filename}")
         
         if not cubes:
-            print("Warning: No cubes to visualize")
             return None
         
-        # Get time coordinates
-        if 'time' in data.dims:
+        # Get time coordinates - handle both Dataset and non-Dataset inputs
+        if hasattr(data, 'dims') and 'time' in data.dims:
             time_coords = pd.to_datetime(data.time.values)
         else:
-            # Use the first cube with valid NDVI profile to get time dimension
-            first_valid_cube = next((cube for cube in cubes if self._has_valid_ndvi_profile(cube)), None)
-            if first_valid_cube:
-                time_coords = list(range(len(first_valid_cube['ndvi_profile'])))
+            # Fallback: use first valid cube to determine time dimension
+            first_valid = next((c for c in cubes if self._get_ndvi_profile(c)), None)
+            if first_valid:
+                time_coords = list(range(len(self._get_ndvi_profile(first_valid))))
             else:
                 time_coords = list(range(10))  # Default fallback
         
-        # Create subplots for different views
+        # Filter valid cubes
+        valid_cubes = [c for c in cubes if self._is_valid_cube(c)]
+        
+        # Create subplots
         fig = make_subplots(
             rows=2, cols=2,
-            subplot_titles=[
-                'All Clusters NDVI Evolution',
-                'Individual Cluster Analysis',
-                'NDVI Distribution Over Time',
-                'Cluster Statistics'
-            ],
+            subplot_titles=['All Clusters NDVI Evolution', 'Individual Cluster Analysis', 
+                           'NDVI Distribution Over Time', 'Cluster Statistics'],
             specs=[[{"type": "scatter"}, {"type": "scatter"}],
                    [{"type": "heatmap"}, {"type": "bar"}]]
         )
         
-        # Plot 1: All clusters time series
-        valid_cubes = [cube for cube in cubes if self._has_valid_ndvi_profile(cube)]
+        # Plot 1: All clusters (limit to 10 for readability)
+        for i, cube in enumerate(valid_cubes[:10]):
+            fig.add_trace(go.Scatter(
+                x=time_coords, y=cube['ndvi_profile'], mode='lines+markers',
+                name=f'Cluster {i} (Area: {cube["area"]})',
+                line=dict(color=self.color_palette[i % len(self.color_palette)], width=2),
+                hovertemplate=f'Cluster {i}<br>Time: %{{x}}<br>NDVI: %{{y:.3f}}<br>Area: {cube["area"]} pixels<extra></extra>'
+            ), row=1, col=1)
         
-        for i, cube in enumerate(valid_cubes[:10]):  # Limit to first 10 for readability
-            color_idx = i % len(self.color_palette)
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=time_coords,
-                    y=cube['ndvi_profile'],
-                    mode='lines+markers',
-                    name=f'Cluster {i} (Area: {cube["area"]})',
-                    line=dict(color=self.color_palette[color_idx], width=2),
-                    marker=dict(size=4),
-                    hovertemplate=f'Cluster {i}<br>Time: %{{x}}<br>NDVI: %{{y:.3f}}<br>Area: {cube["area"]} pixels<br>Type: {cube["vegetation_type"]}<extra></extra>'
-                ),
-                row=1, col=1
-            )
-        
-        # Plot 2: Select interesting clusters for detailed view
+        # Plot 2: High seasonality clusters
         interesting_clusters = sorted(valid_cubes, key=lambda x: x.get('seasonality_score', 0), reverse=True)[:3]
+        for cube in interesting_clusters:
+            fig.add_trace(go.Scatter(
+                x=time_coords, y=cube['ndvi_profile'], mode='lines+markers',
+                name=f'High Seasonality Cluster {cube["id"]}', line=dict(width=3),
+                hovertemplate=f'Cluster {cube["id"]}<br>Seasonality: {cube.get("seasonality_score", 0):.3f}<extra></extra>'
+            ), row=1, col=2)
         
-        for i, cube in enumerate(interesting_clusters):
-            fig.add_trace(
-                go.Scatter(
-                    x=time_coords,
-                    y=cube['ndvi_profile'],
-                    mode='lines+markers',
-                    name=f'High Seasonality Cluster {cube["id"]}',
-                    line=dict(width=3),
-                    marker=dict(size=6),
-                    hovertemplate=f'Cluster {cube["id"]}<br>Time: %{{x}}<br>NDVI: %{{y:.3f}}<br>Seasonality: {cube.get("seasonality_score", 0):.3f}<extra></extra>'
-                ),
-                row=1, col=2
-            )
-        
-        # Plot 3: NDVI heatmap over time
+        # Plot 3: NDVI heatmap
         if valid_cubes:
             ndvi_matrix = np.array([cube['ndvi_profile'][:len(time_coords)] for cube in valid_cubes[:20]])
-            
-            fig.add_trace(
-                go.Heatmap(
-                    z=ndvi_matrix,
-                    x=time_coords,
-                    y=[f'Cluster {i}' for i in range(len(ndvi_matrix))],
-                    colorscale='RdYlGn',
-                    name='NDVI Matrix',
-                    hovertemplate='Time: %{x}<br>Cluster: %{y}<br>NDVI: %{z:.3f}<extra></extra>'
-                ),
-                row=2, col=1
-            )
+            fig.add_trace(go.Heatmap(
+                z=ndvi_matrix, x=time_coords, y=[f'Cluster {i}' for i in range(len(ndvi_matrix))],
+                colorscale='RdYlGn', hovertemplate='Time: %{x}<br>Cluster: %{y}<br>NDVI: %{z:.3f}<extra></extra>'
+            ), row=2, col=1)
         
-        # Plot 4: Cluster statistics
-        mean_ndvis = [cube['mean_ndvi'] for cube in valid_cubes]
-        cluster_names = [f'Cluster {cube["id"]}' for cube in valid_cubes]
-        
-        fig.add_trace(
-            go.Bar(
-                x=cluster_names[:10],
-                y=mean_ndvis[:10],
-                name='Mean NDVI',
-                marker_color='green',
-                hovertemplate='%{x}<br>Mean NDVI: %{y:.3f}<extra></extra>'
-            ),
-            row=2, col=2
-        )
+        # Plot 4: Statistics bar chart
+        fig.add_trace(go.Bar(
+            x=[f'Cluster {c["id"]}' for c in valid_cubes[:10]],
+            y=[c['mean_ndvi'] for c in valid_cubes[:10]],
+            marker_color='green', hovertemplate='%{x}<br>Mean NDVI: %{y:.3f}<extra></extra>'
+        ), row=2, col=2)
         
         # Update layout
-        fig.update_layout(
-            title=title,
-            width=1600,
-            height=900,
-            hovermode='closest',
-            showlegend=True
-        )
+        fig.update_layout(title=title, width=1600, height=900, hovermode='closest')
+        axes_titles = [("Time", "NDVI Value"), ("Time", "NDVI Value"), ("Time", "Cluster"), ("Cluster", "Mean NDVI")]
+        for i, (x_title, y_title) in enumerate(axes_titles):
+            row, col = (i // 2) + 1, (i % 2) + 1
+            fig.update_xaxes(title_text=x_title, row=row, col=col)
+            fig.update_yaxes(title_text=y_title, row=row, col=col)
         
-        # Update axes
-        fig.update_xaxes(title_text="Time", row=1, col=1)
-        fig.update_yaxes(title_text="NDVI Value", row=1, col=1)
-        fig.update_xaxes(title_text="Time", row=1, col=2)
-        fig.update_yaxes(title_text="NDVI Value", row=1, col=2)
-        fig.update_xaxes(title_text="Time", row=2, col=1)
-        fig.update_yaxes(title_text="Cluster", row=2, col=1)
-        fig.update_xaxes(title_text="Cluster", row=2, col=2)
-        fig.update_yaxes(title_text="Mean NDVI", row=2, col=2)
-        
-        # Save as HTML
-        output_file = self.output_dir / filename
-        pyo.plot(fig, filename=str(output_file), auto_open=False)
-        print(f"NDVI time series plot saved to: {output_file}")
-        
+        pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
+        print(f"NDVI time series plot saved to: {self.output_dir / filename}")
         return fig
     
-    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: xr.Dataset, filename: str, title: str = "3D Spatiotemporal View"):
-        """
-        Create a 3D visualization with X,Y spatial coordinates and Time (Z) axis.
-        
-        This creates exactly what you requested:
-        - X,Y axes = spatial coordinates
-        - Z axis = time dimension  
-        - 3D cubes = individual pixels evolving over time
-        - Color = NDVI values (greener = higher NDVI)
-        - Basemap = X,Y plane showing spatial context
-        
-        Args:
-            cubes: List of processed cube dictionaries
-            data: Original xarray dataset
-            filename: Output HTML filename
-            title: Plot title
-        """
-        print(f"Creating 3D pixel evolution visualization: {filename}")
+    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View"):
+        """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis."""
+        print(f"Creating 3D spatiotemporal visualization: {filename}")
         
         if not cubes:
-            print("Warning: No cubes to visualize")
             return None
         
-        # Get time coordinates
-        if 'time' in data.dims:
-            time_coords = np.arange(len(data.time))
-            time_labels = [str(t)[:10] for t in pd.to_datetime(data.time.values)]
+        # Setup time coordinates - handle both Dataset and non-Dataset inputs
+        if hasattr(data, 'dims') and 'time' in data.dims:
+            n_time_steps = len(data.time)
+            actual_years = [1984 + i for i in range(n_time_steps)]
+            time_coords = np.arange(n_time_steps)
         else:
-            # Use first valid cube to determine time dimension
-            first_valid_cube = next((cube for cube in cubes if self._has_valid_ndvi_profile(cube)), None)
-            if first_valid_cube:
-                time_coords = np.arange(len(first_valid_cube['ndvi_profile']))
-                time_labels = [f"Time {i}" for i in time_coords]
-            else:
-                time_coords = np.arange(10)
-                time_labels = [f"Time {i}" for i in range(10)]
+            # Fallback: use first valid cube to determine time dimension
+            first_valid = next((c for c in cubes if self._is_valid_cube(c)), None)
+            if not first_valid:
+                return None
+            n_time_steps = len(self._get_ndvi_profile(first_valid))
+            actual_years = [1984 + i for i in range(n_time_steps)]
+            time_coords = np.arange(n_time_steps)
         
         # Filter valid cubes
-        valid_cubes = [cube for cube in cubes if self._has_valid_pixels(cube) and self._has_valid_ndvi_profile(cube)]
-        
+        valid_cubes = [c for c in cubes if self._is_valid_cube(c)]
         if not valid_cubes:
-            print("Warning: No valid cubes with spatial and temporal data")
             return None
-        
-        print(f"Creating 3D visualization for {len(valid_cubes)} cubes over {len(time_coords)} time steps")
-        
-        # Create 3D plot
-        fig = go.Figure()
         
         # Get spatial extent
         all_pixels = []
         for cube in valid_cubes:
-            pixels = self._get_pixels_safely(cube)
-            all_pixels.extend(pixels)
+            all_pixels.extend(self._get_pixels_safely(cube))
         
-        if not all_pixels:
-            print("Warning: No pixels found in cubes")
-            return None
+        y_coords, x_coords = zip(*all_pixels)
+        y_min, y_max, x_min, x_max = min(y_coords), max(y_coords), min(x_coords), max(x_coords)
         
-        y_coords = [p[0] for p in all_pixels]
-        x_coords = [p[1] for p in all_pixels]
-        y_min, y_max = min(y_coords), max(y_coords)
-        x_min, x_max = min(x_coords), max(x_coords)
+        fig = go.Figure()
         
-        # 1. CREATE BASEMAP (2D surface at z=0)
-        x_base = np.linspace(x_min, x_max, min(30, x_max - x_min + 1))
-        y_base = np.linspace(y_min, y_max, min(30, y_max - y_min + 1))
+        # Create NDVI basemap
+        x_base = np.linspace(x_min, x_max, min(50, x_max - x_min + 1))
+        y_base = np.linspace(y_min, y_max, min(50, y_max - y_min + 1))
         X_base, Y_base = np.meshgrid(x_base, y_base)
-        Z_base = np.zeros_like(X_base)
+        Z_base = np.full_like(X_base, 1984)
         
-        # Create NDVI basemap by interpolating from pixel data
-        basemap_ndvi = np.full_like(X_base, 0.3)  # Default background
-        
-        # Fill basemap with actual NDVI values
+        # Create basemap from vegetation data
+        basemap_ndvi = np.full((len(y_base), len(x_base)), 0.2)
         for cube in valid_cubes:
             pixels = self._get_pixels_safely(cube)
-            mean_ndvi = cube.get('mean_ndvi', 0.5)
+            mean_ndvi = np.clip(cube.get('mean_ndvi', 0.5), 0.0, 1.0)
             
-            for pixel in pixels:
-                px_y, px_x = pixel
-                # Find closest grid point
+            for px_y, px_x in pixels:
                 x_idx = np.argmin(np.abs(x_base - px_x))
                 y_idx = np.argmin(np.abs(y_base - px_y))
-                basemap_ndvi[y_idx, x_idx] = mean_ndvi
+                if 0 <= y_idx < len(y_base) and 0 <= x_idx < len(x_base):
+                    basemap_ndvi[y_idx, x_idx] = max(basemap_ndvi[y_idx, x_idx], mean_ndvi)
         
-        # Add basemap surface
+        # Add basemap
         fig.add_trace(go.Surface(
-            x=X_base,
-            y=Y_base,
-            z=Z_base,
-            surfacecolor=basemap_ndvi,
-            colorscale='RdYlGn',
-            cmin=0.0,
-            cmax=1.0,
-            opacity=0.6,
-            name='NDVI Basemap',
-            showscale=True,
-            colorbar=dict(
-                title="NDVI",
-                x=1.1,
-                len=0.5,
-                y=0.75
-            ),
-            hovertemplate='Basemap<br>X: %{x:.1f}<br>Y: %{y:.1f}<br>NDVI: %{surfacecolor:.3f}<extra></extra>'
+            x=X_base, y=Y_base, z=Z_base, surfacecolor=basemap_ndvi,
+            colorscale='RdYlGn', cmin=0.0, cmax=1.0, opacity=0.7,
+            showscale=True, hoverinfo='none',
+            colorbar=dict(title="NDVI", x=1.1, len=0.5, y=0.75)
         ))
         
-        # 2. CREATE 3D CUBES FOR EACH CLUSTER AT EACH TIME STEP
-        colors = px.colors.qualitative.Set3
-        max_time_steps = min(10, len(time_coords))  # Limit for performance
-        
+        # Add 3D cubes for clusters
+        max_time_steps = min(15, len(time_coords))
         for time_idx in range(max_time_steps):
-            z_level = time_idx + 1  # Start above basemap
+            actual_year = actual_years[time_idx]
             
-            for cube_idx, cube in enumerate(valid_cubes[:10]):  # Limit cubes for performance
+            for cube_idx, cube in enumerate(valid_cubes[:8]):  # Limit for performance
                 pixels = self._get_pixels_safely(cube)
-                ndvi_profile = cube.get('ndvi_profile', [])
+                ndvi_profile = self._get_ndvi_profile(cube)
                 
-                if time_idx < len(ndvi_profile):
-                    ndvi_value = ndvi_profile[time_idx]
+                if time_idx < len(ndvi_profile) and pixels:
+                    px_coords = np.array(pixels)
+                    y_vals, x_vals = px_coords[:, 0], px_coords[:, 1]
+                    z_vals = np.full(len(pixels), actual_year)
+                    ndvi_vals = np.full(len(pixels), ndvi_profile[time_idx])
                     
-                    # Get pixel coordinates
-                    if pixels:
-                        px_coords = np.array(pixels)
-                        y_vals = px_coords[:, 0]
-                        x_vals = px_coords[:, 1]
-                        z_vals = np.full(len(pixels), z_level)
-                        ndvi_vals = np.full(len(pixels), ndvi_value)
-                        
-                        # Create scatter3d for this cluster at this time
-                        color_idx = cube_idx % len(colors)
-                        fig.add_trace(go.Scatter3d(
-                            x=x_vals,
-                            y=y_vals,
-                            z=z_vals,
-                            mode='markers',
-                            marker=dict(
-                                size=4,
-                                color=ndvi_vals,
-                                colorscale='RdYlGn',
-                                cmin=0.0,
-                                cmax=1.0,
-                                showscale=False,
-                                line=dict(width=1, color='black')
-                            ),
-                            name=f'Cluster {cube_idx+1} - T{time_idx}',
-                            text=[f'Cluster {cube_idx+1}<br>Time: {time_labels[time_idx]}<br>NDVI: {ndvi_value:.3f}<br>Pixel: ({int(x)},{int(y)})' 
-                                  for x, y in zip(x_vals, y_vals)],
-                            hovertemplate='%{text}<extra></extra>',
-                            showlegend=(time_idx == 0)  # Only show legend for first time step
-                        ))
+                    fig.add_trace(go.Scatter3d(
+                        x=x_vals, y=y_vals, z=z_vals, mode='markers',
+                        marker=dict(size=3, color=ndvi_vals, colorscale='RdYlGn', 
+                                  cmin=0.0, cmax=1.0, showscale=False, opacity=0.8),
+                        name=f'Cluster {cube_idx+1} - {actual_year}',
+                        text=[f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_profile[time_idx]:.3f}' 
+                              for _ in range(len(pixels))],
+                        hovertemplate='%{text}<extra></extra>',
+                        showlegend=(time_idx == 0)
+                    ))
         
-        # 3. ADD TIME AXIS LABELS AND STYLING
+        # Update layout
         fig.update_layout(
-            title={
-                'text': f'{title} - {len(valid_cubes)} Vegetation Clusters',
-                'x': 0.5,
-                'xanchor': 'center',
-                'font': {'size': 16}
-            },
+            title=f'{title} - {len(valid_cubes)} Vegetation Clusters (1984-2025)',
             scene=dict(
-                xaxis_title='X Coordinate (pixels)',
-                yaxis_title='Y Coordinate (pixels)',
-                zaxis_title='Time Step',
-                camera=dict(
-                    eye=dict(x=1.5, y=1.5, z=1.5)
-                ),
-                aspectmode='cube'
+                xaxis_title='X Coordinate', yaxis_title='Y Coordinate', zaxis_title='Year',
+                zaxis=dict(tickmode='array', tickvals=[1984, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2025],
+                          ticktext=['1984', '1990', '1995', '2000', '2005', '2010', '2015', '2020', '2025']),
+                camera=dict(eye=dict(x=1.5, y=1.5, z=1.2)),
+                aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.6)
             ),
-            width=1000,
-            height=800,
-            margin=dict(l=0, r=0, t=50, b=0)
+            width=1200, height=800, margin=dict(l=0, r=0, t=50, b=0)
         )
         
-        # Add annotations for time axis
-        for i in range(0, max_time_steps, max(1, max_time_steps//5)):
-            fig.add_trace(go.Scatter3d(
-                x=[x_min],
-                y=[y_min],
-                z=[i + 1],
-                mode='markers+text',
-                marker=dict(size=1, color='black'),
-                text=[time_labels[i]],
-                textposition='middle left',
-                showlegend=False,
-                hoverinfo='skip'
-            ))
-        
-        # Save the plot
-        output_file = self.output_dir / filename
-        pyo.plot(fig, filename=str(output_file), auto_open=False)
-        
-        print(f"3D spatiotemporal visualization saved to: {output_file}")
-        return str(output_file)
+        pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
+        print(f"3D spatiotemporal visualization saved to: {self.output_dir / filename}")
+        return str(self.output_dir / filename)
     
     def create_interactive_statistics_dashboard(self, cubes: List[Dict], filename: str, title: str = "Vegetation Statistics"):
-        """
-        Create an interactive dashboard with vegetation cube statistics.
-        
-        Args:
-            cubes: List of processed cube dictionaries
-            filename: Output HTML filename
-            title: Plot title
-        """
+        """Create an interactive dashboard with vegetation cube statistics."""
         print(f"Creating statistics dashboard: {filename}")
         
         if not cubes:
-            print("Warning: No cubes to visualize")
             return None
         
-        # Prepare data
+        # Prepare data efficiently
         cube_data = []
         for cube in cubes:
-            ndvi_profile = cube.get('ndvi_profile', [])
-            if self._has_valid_ndvi_profile(cube):
-                max_ndvi = np.max(ndvi_profile)
-                min_ndvi = np.min(ndvi_profile)
+            ndvi_profile = self._get_ndvi_profile(cube)
+            if ndvi_profile:
+                max_ndvi, min_ndvi = np.max(ndvi_profile), np.min(ndvi_profile)
                 ndvi_range = max_ndvi - min_ndvi
             else:
                 max_ndvi = min_ndvi = ndvi_range = 0
             
             cube_data.append({
-                'cube_id': cube['id'],
-                'area': cube['area'],
-                'mean_ndvi': cube['mean_ndvi'],
-                'max_ndvi': max_ndvi,
-                'min_ndvi': min_ndvi,
-                'ndvi_range': ndvi_range,
+                'cube_id': cube['id'], 'area': cube['area'], 'mean_ndvi': cube['mean_ndvi'],
+                'max_ndvi': max_ndvi, 'min_ndvi': min_ndvi, 'ndvi_range': ndvi_range,
                 'temporal_variance': cube.get('heterogeneity', 0),
                 'seasonality_score': cube.get('seasonality_score', 0),
                 'vegetation_type': cube.get('vegetation_type', 'Unknown')
@@ -733,197 +448,123 @@ class InteractiveVisualization:
         # Create subplots
         fig = make_subplots(
             rows=2, cols=2,
-            subplot_titles=[
-                'Cube Area Distribution',
-                'NDVI vs Area (colored by vegetation type)',
-                'Seasonality vs Mean NDVI',
-                'Vegetation Type Distribution'
-            ],
+            subplot_titles=['Cube Area Distribution', 'NDVI vs Area (colored by vegetation type)',
+                           'Seasonality vs Mean NDVI', 'Vegetation Type Distribution'],
             specs=[[{"type": "histogram"}, {"type": "scatter"}],
                    [{"type": "scatter"}, {"type": "pie"}]]
         )
         
-        # Area distribution
-        fig.add_trace(
-            go.Histogram(
-                x=df['area'],
-                nbinsx=20,
-                name='Area Distribution',
-                marker_color='lightblue',
-                hovertemplate='Area: %{x}<br>Count: %{y}<extra></extra>'
-            ),
-            row=1, col=1
-        )
+        # Area histogram
+        fig.add_trace(go.Histogram(
+            x=df['area'], nbinsx=20, marker_color='lightblue',
+            hovertemplate='Area: %{x}<br>Count: %{y}<extra></extra>'
+        ), row=1, col=1)
         
-        # NDVI vs Area scatter (colored by vegetation type)
-        veg_types = df['vegetation_type'].unique()
+        # NDVI vs Area scatter by vegetation type
         colors = px.colors.qualitative.Set1
-        
-        for i, veg_type in enumerate(veg_types):
+        for i, veg_type in enumerate(df['vegetation_type'].unique()):
             subset = df[df['vegetation_type'] == veg_type]
-            fig.add_trace(
-                go.Scatter(
-                    x=subset['area'],
-                    y=subset['mean_ndvi'],
-                    mode='markers',
-                    name=veg_type,
-                    marker=dict(size=8, color=colors[i % len(colors)], opacity=0.7),
-                    text=[f'Cluster {i}' for i in subset['cube_id']],
-                    hovertemplate=f'{veg_type}<br>Cluster: %{{text}}<br>Area: %{{x}}<br>NDVI: %{{y:.3f}}<extra></extra>'
-                ),
-                row=1, col=2
-            )
+            fig.add_trace(go.Scatter(
+                x=subset['area'], y=subset['mean_ndvi'], mode='markers',
+                name=veg_type, marker=dict(size=8, color=colors[i % len(colors)], opacity=0.7),
+                text=[f'Cluster {i}' for i in subset['cube_id']],
+                hovertemplate=f'{veg_type}<br>Cluster: %{{text}}<br>Area: %{{x}}<br>NDVI: %{{y:.3f}}<extra></extra>'
+            ), row=1, col=2)
         
-        # Seasonality vs Mean NDVI
-        fig.add_trace(
-            go.Scatter(
-                x=df['mean_ndvi'],
-                y=df['seasonality_score'],
-                mode='markers',
-                name='Seasonality Analysis',
-                marker=dict(
-                    size=df['area']/10,  # Size represents area
-                    color=df['seasonality_score'],
-                    colorscale='Viridis',
-                    opacity=0.7,
-                    colorbar=dict(title="Seasonality")
-                ),
-                text=[f'Cluster {i}' for i in df['cube_id']],
-                hovertemplate='Cluster: %{text}<br>Mean NDVI: %{x:.3f}<br>Seasonality: %{y:.3f}<extra></extra>'
-            ),
-            row=2, col=1
-        )
+        # Seasonality vs NDVI
+        fig.add_trace(go.Scatter(
+            x=df['mean_ndvi'], y=df['seasonality_score'], mode='markers',
+            marker=dict(size=df['area']/10, color=df['seasonality_score'], 
+                       colorscale='Viridis', opacity=0.7, colorbar=dict(title="Seasonality")),
+            text=[f'Cluster {i}' for i in df['cube_id']],
+            hovertemplate='Cluster: %{text}<br>Mean NDVI: %{x:.3f}<br>Seasonality: %{y:.3f}<extra></extra>'
+        ), row=2, col=1)
         
-        # Vegetation type pie chart
+        # Vegetation type pie
         type_counts = df['vegetation_type'].value_counts()
-        fig.add_trace(
-            go.Pie(
-                labels=type_counts.index,
-                values=type_counts.values,
-                name='Vegetation Types',
-                hovertemplate='%{label}<br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
-            ),
-            row=2, col=2
-        )
+        fig.add_trace(go.Pie(
+            labels=type_counts.index, values=type_counts.values,
+            hovertemplate='%{label}<br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
+        ), row=2, col=2)
         
         # Update layout
-        fig.update_layout(
-            title=title,
-            width=1400,
-            height=900,
-            hovermode='closest'
-        )
+        fig.update_layout(title=title, width=1400, height=900, hovermode='closest')
         
         # Update axes
-        fig.update_xaxes(title_text="Area (pixels)", row=1, col=1)
-        fig.update_yaxes(title_text="Frequency", row=1, col=1)
-        fig.update_xaxes(title_text="Area (pixels)", row=1, col=2)
-        fig.update_yaxes(title_text="Mean NDVI", row=1, col=2)
-        fig.update_xaxes(title_text="Mean NDVI", row=2, col=1)
-        fig.update_yaxes(title_text="Seasonality Score", row=2, col=1)
+        axes_config = [("Area (pixels)", "Frequency"), ("Area (pixels)", "Mean NDVI"),
+                      ("Mean NDVI", "Seasonality Score"), (None, None)]
+        for i, (x_title, y_title) in enumerate(axes_config):
+            if x_title:  # Skip pie chart
+                row, col = (i // 2) + 1, (i % 2) + 1
+                fig.update_xaxes(title_text=x_title, row=row, col=col)
+                fig.update_yaxes(title_text=y_title, row=row, col=col)
         
-        # Save as HTML
-        output_file = self.output_dir / filename
-        pyo.plot(fig, filename=str(output_file), auto_open=False)
-        print(f"Statistics dashboard saved to: {output_file}")
-        
+        pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
+        print(f"Statistics dashboard saved to: {self.output_dir / filename}")
         return fig
     
-    def create_individual_cluster_analysis(self, cubes: List[Dict], data: xr.Dataset, filename: str, title: str = "Individual Cluster Analysis"):
-        """
-        Create detailed analysis for individual clusters.
-        
-        Args:
-            cubes: List of processed cube dictionaries
-            data: Original xarray dataset
-            filename: Output HTML filename
-            title: Plot title
-        """
+    def create_individual_cluster_analysis(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "Individual Cluster Analysis"):
+        """Create detailed analysis for individual clusters."""
         print(f"Creating individual cluster analysis: {filename}")
         
         if not cubes:
-            print("Warning: No cubes to visualize")
             return None
         
-        # Select most interesting clusters for detailed analysis
+        # Select most interesting clusters
         interesting_cubes = sorted(cubes, key=lambda x: x.get('seasonality_score', 0), reverse=True)[:6]
         
-        # Create subplots for each interesting cluster
         fig = make_subplots(
             rows=2, cols=3,
-            subplot_titles=[f'Cluster {cube["id"]} - {cube.get("vegetation_type", "Unknown")}' for cube in interesting_cubes],
+            subplot_titles=[f'Cluster {c["id"]} - {c.get("vegetation_type", "Unknown")}' for c in interesting_cubes],
             specs=[[{"type": "scatter"} for _ in range(3)] for _ in range(2)]
         )
         
-        # Get time coordinates
-        if 'time' in data.dims:
+        # Get time coordinates - handle both Dataset and non-Dataset inputs
+        if hasattr(data, 'dims') and 'time' in data.dims:
             time_coords = pd.to_datetime(data.time.values)
         else:
-            time_coords = list(range(len(interesting_cubes[0]['ndvi_profile']) if interesting_cubes[0]['ndvi_profile'] else 10))
+            # Fallback: use first interesting cube to determine time dimension
+            first_valid = next((c for c in interesting_cubes if self._get_ndvi_profile(c)), None)
+            if first_valid:
+                time_coords = list(range(len(self._get_ndvi_profile(first_valid))))
+            else:
+                time_coords = list(range(10))  # Default fallback
         
         # Plot each cluster
         for idx, cube in enumerate(interesting_cubes):
-            row = (idx // 3) + 1
-            col = (idx % 3) + 1
+            row, col = (idx // 3) + 1, (idx % 3) + 1
+            ndvi_profile = self._get_ndvi_profile(cube)
             
-            if cube['ndvi_profile']:
+            if ndvi_profile:
                 # NDVI time series
-                fig.add_trace(
-                    go.Scatter(
-                        x=time_coords,
-                        y=cube['ndvi_profile'],
-                        mode='lines+markers',
-                        name=f'Cluster {cube["id"]}',
-                        line=dict(color=self.color_palette[idx % len(self.color_palette)], width=3),
-                        marker=dict(size=6),
-                        hovertemplate=f'Cluster {cube["id"]}<br>' +
-                                    f'Time: %{{x}}<br>' +
-                                    f'NDVI: %{{y:.3f}}<br>' +
-                                    f'Type: {cube.get("vegetation_type", "Unknown")}<br>' +
-                                    f'Area: {cube["area"]} pixels<extra></extra>',
-                        showlegend=False
-                    ),
-                    row=row, col=col
-                )
+                fig.add_trace(go.Scatter(
+                    x=time_coords, y=ndvi_profile, mode='lines+markers',
+                    line=dict(color=self.color_palette[idx % len(self.color_palette)], width=3),
+                    hovertemplate=f'Cluster {cube["id"]}<br>Time: %{{x}}<br>NDVI: %{{y:.3f}}<br>Type: {cube.get("vegetation_type", "Unknown")}<br>Area: {cube["area"]} pixels<extra></extra>',
+                    showlegend=False
+                ), row=row, col=col)
                 
                 # Add trend line
-                if len(cube['ndvi_profile']) > 2:
-                    x_numeric = np.arange(len(cube['ndvi_profile']))
-                    z = np.polyfit(x_numeric, cube['ndvi_profile'], 1)
-                    trend_line = np.poly1d(z)(x_numeric)
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=time_coords,
-                            y=trend_line,
-                            mode='lines',
-                            name=f'Trend {cube["id"]}',
-                            line=dict(color='red', width=2, dash='dash'),
-                            showlegend=False,
-                            hoverinfo='skip'
-                        ),
-                        row=row, col=col
-                    )
+                if len(ndvi_profile) > 2:
+                    x_numeric = np.arange(len(ndvi_profile))
+                    trend_line = np.poly1d(np.polyfit(x_numeric, ndvi_profile, 1))(x_numeric)
+                    fig.add_trace(go.Scatter(
+                        x=time_coords, y=trend_line, mode='lines',
+                        line=dict(color='red', width=2, dash='dash'),
+                        showlegend=False, hoverinfo='skip'
+                    ), row=row, col=col)
         
         # Update layout
-        fig.update_layout(
-            title=title,
-            width=1500,
-            height=800,
-            hovermode='closest'
-        )
+        fig.update_layout(title=title, width=1500, height=800, hovermode='closest')
         
         # Update all axes
-        for i in range(1, 3):  # rows
-            for j in range(1, 4):  # cols
+        for i in range(1, 3):
+            for j in range(1, 4):
                 fig.update_xaxes(title_text="Time", row=i, col=j)
                 fig.update_yaxes(title_text="NDVI", row=i, col=j)
         
-        # Save as HTML
-        output_file = self.output_dir / filename
-        pyo.plot(fig, filename=str(output_file), auto_open=False)
-        print(f"Individual cluster analysis saved to: {output_file}")
-        
+        pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
+        print(f"Individual cluster analysis saved to: {self.output_dir / filename}")
         return fig
 
 
