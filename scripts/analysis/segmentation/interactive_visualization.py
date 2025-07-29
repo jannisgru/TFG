@@ -37,7 +37,11 @@ scripts_dir = Path(__file__).parent.parent.parent
 sys.path.append(str(scripts_dir))
 
 # Import only the cube module to avoid circular imports
-from cube import STCube
+try:
+    from .cube import STCube
+except ImportError:
+    # Fallback for direct execution
+    from cube import STCube
 
 
 class InteractiveVisualization:
@@ -85,9 +89,17 @@ class InteractiveVisualization:
     def create_all_visualizations(self, 
                                 cubes: Union[List[STCube], List[Dict]], 
                                 data: Union[xr.Dataset, str], 
-                                municipality_name: str = "Unknown") -> Dict[str, str]:
-        """Create all visualizations for vegetation clusters."""
-        logger.info(f"Creating comprehensive visualizations for {municipality_name}...")
+                                municipality_name: str = "Unknown",
+                                basemap_mode: str = "rgb") -> Dict[str, str]:
+        """Create all visualizations for vegetation clusters.
+        
+        Args:
+            cubes: List of vegetation clusters
+            data: xarray Dataset with satellite data
+            municipality_name: Name of the municipality
+            basemap_mode: Basemap mode for 3D visualization ("auto", "rgb", "ndvi", "false_color")
+        """
+        logger.info(f"Creating comprehensive visualizations for {municipality_name} (basemap: {basemap_mode})...")
         
         # Convert and process cube data
         processed_cubes = self._process_cube_data(cubes, data)
@@ -105,8 +117,10 @@ class InteractiveVisualization:
         for viz_name, viz_func, title in viz_configs:
             filename = f"{viz_name}_{municipality_name.replace(' ', '_')}.html"
             try:
-                if viz_name == "time_series" or viz_name == "cluster_analysis" or viz_name == "3d_spatiotemporal":
+                if viz_name == "time_series" or viz_name == "cluster_analysis":
                     result = viz_func(processed_cubes, data, filename, title)
+                elif viz_name == "3d_spatiotemporal":
+                    result = viz_func(processed_cubes, data, filename, title, basemap_mode)
                 else:
                     result = viz_func(processed_cubes, filename, title)
                 
@@ -313,13 +327,25 @@ class InteractiveVisualization:
         print(f"NDVI time series plot saved to: {self.output_dir / filename}")
         return fig
     
-    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View"):
-        """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis."""
-        print(f"Creating 3D spatiotemporal visualization: {filename}")
+    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View", basemap_mode: str = "auto"):
+        """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis. Uses RGB/NDVI from xarray for realistic basemap.
         
+        Args:
+            cubes: List of vegetation cluster dictionaries
+            data: xarray Dataset with satellite imagery
+            filename: Output HTML filename
+            title: Plot title
+            basemap_mode: Basemap visualization mode - "auto", "rgb", "ndvi", or "false_color"
+                - "auto": Try RGB first, fallback to NDVI
+                - "rgb": Natural color RGB composite (Red, Green, Blue)
+                - "ndvi": NDVI vegetation index
+                - "false_color": False color composite (NIR, Red, Green) for vegetation emphasis
+        """
+        print(f"Creating 3D spatiotemporal visualization: {filename} (basemap mode: {basemap_mode})")
+
         if not cubes:
             return None
-        
+
         # Setup time coordinates - handle both Dataset and non-Dataset inputs
         if hasattr(data, 'dims') and 'time' in data.dims:
             n_time_steps = len(data.time)
@@ -333,87 +359,342 @@ class InteractiveVisualization:
             n_time_steps = len(self._get_ndvi_profile(first_valid))
             actual_years = [1984 + i for i in range(n_time_steps)]
             time_coords = np.arange(n_time_steps)
-        
+
         # Filter valid cubes
         valid_cubes = [c for c in cubes if self._is_valid_cube(c)]
         if not valid_cubes:
             return None
-        
-        # Get spatial extent
-        all_pixels = []
-        for cube in valid_cubes:
-            all_pixels.extend(self._get_pixels_safely(cube))
-        
-        y_coords, x_coords = zip(*all_pixels)
-        y_min, y_max, x_min, x_max = min(y_coords), max(y_coords), min(x_coords), max(x_coords)
-        
+
         fig = go.Figure()
-        
-        # Create NDVI basemap
-        x_base = np.linspace(x_min, x_max, min(50, x_max - x_min + 1))
-        y_base = np.linspace(y_min, y_max, min(50, y_max - y_min + 1))
-        X_base, Y_base = np.meshgrid(x_base, y_base)
-        Z_base = np.full_like(X_base, 1984)
-        
-        # Create basemap from vegetation data
-        basemap_ndvi = np.full((len(y_base), len(x_base)), 0.2)
-        for cube in valid_cubes:
-            pixels = self._get_pixels_safely(cube)
-            mean_ndvi = np.clip(cube.get('mean_ndvi', 0.5), 0.0, 1.0)
+
+        # Create basemap using actual raster data
+        if hasattr(data, 'dims') and hasattr(data, 'x') and hasattr(data, 'y'):
+            # Use real geographic coordinates from xarray
+            x_coords_data = np.array(data.x)
+            y_coords_data = np.array(data.y)
             
-            for px_y, px_x in pixels:
-                x_idx = np.argmin(np.abs(x_base - px_x))
-                y_idx = np.argmin(np.abs(y_base - px_y))
-                if 0 <= y_idx < len(y_base) and 0 <= x_idx < len(x_base):
-                    basemap_ndvi[y_idx, x_idx] = max(basemap_ndvi[y_idx, x_idx], mean_ndvi)
-        
-        # Add basemap
-        fig.add_trace(go.Surface(
-            x=X_base, y=Y_base, z=Z_base, surfacecolor=basemap_ndvi,
-            colorscale='RdYlGn', cmin=0.0, cmax=1.0, opacity=0.7,
-            showscale=True, hoverinfo='none',
-            colorbar=dict(title="NDVI", x=1.1, len=0.5, y=0.75)
-        ))
-        
-        # Add 3D cubes for clusters
+            # Set Z to basemap level (1983 - one year before data starts)
+            z_basemap = 1983
+            print(f"Creating basemap at Z = {z_basemap}")
+            
+            # Create meshgrid for surface plotting
+            X_raster, Y_raster = np.meshgrid(x_coords_data, y_coords_data)
+            Z_raster = np.full_like(X_raster, z_basemap)
+            
+            # Try to create basemap based on selected mode
+            surface_colors = None
+            basemap_type = "Unknown"
+            
+            # RGB Natural Color Mode
+            if basemap_mode in ["auto", "rgb"] and 'landsat' in data and 'band' in data.landsat.dims:
+                try:
+                    print(f"Attempting RGB natural color composite...")
+                    # Use last time step for most recent imagery
+                    last_idx = -1
+                    landsat_data = data.landsat.isel(time=last_idx)
+                    
+                    # Extract RGB bands by band name
+                    band_names = list(data.landsat.band.values)
+                    red_idx = next((i for i, band in enumerate(band_names) if 'RED' in band.upper()), None)
+                    green_idx = next((i for i, band in enumerate(band_names) if 'GREEN' in band.upper()), None)
+                    blue_idx = next((i for i, band in enumerate(band_names) if 'BLUE' in band.upper()), None)
+                    
+                    if all(idx is not None for idx in [red_idx, green_idx, blue_idx]):
+                        red = np.array(landsat_data.isel(band=red_idx))
+                        green = np.array(landsat_data.isel(band=green_idx))
+                        blue = np.array(landsat_data.isel(band=blue_idx))
+                        
+                        # Normalize bands individually for better contrast
+                        def normalize_band(band_data, name=""):
+                            band_clean = np.where(np.isnan(band_data), 0, band_data)
+                            valid_data = band_clean[band_clean > 0]
+                            if len(valid_data) > 0:
+                                # Use different percentiles for better RGB balance
+                                if name.upper() == 'BLUE':
+                                    band_min, band_max = np.percentile(valid_data, [5, 95])  # Blue often darker
+                                else:
+                                    band_min, band_max = np.percentile(valid_data, [2, 98])
+                                normalized = np.clip((band_clean - band_min) / (band_max - band_min), 0, 1)
+                                return normalized
+                            else:
+                                return np.zeros_like(band_clean)
+                        
+                        red_norm = normalize_band(red, 'RED')
+                        green_norm = normalize_band(green, 'GREEN') 
+                        blue_norm = normalize_band(blue, 'BLUE')
+                        
+                        # Create RGB composite for true color visualization
+                        # Stack RGB bands into a 3D array (height, width, 3)
+                        rgb_composite = np.stack([red_norm, green_norm, blue_norm], axis=-1)
+                        
+                        # For Plotly Surface, we need to convert RGB to a format it can understand
+                        # We'll use the RGB composite directly, not convert to intensity
+                        surface_colors = rgb_composite
+                        basemap_type = "RGB Natural Color"
+                        
+                        print(f"RGB composite created - Red:{red_norm.min():.3f}-{red_norm.max():.3f}, Green:{green_norm.min():.3f}-{green_norm.max():.3f}, Blue:{blue_norm.min():.3f}-{blue_norm.max():.3f}")
+                        
+                    else:
+                        print("Could not find all RGB bands in landsat data")
+                        if basemap_mode == "rgb":
+                            print("RGB mode requested but bands not available, falling back to NDVI")
+                        
+                except Exception as e:
+                    print(f"RGB composite failed: {e}")
+                    if basemap_mode == "rgb":
+                        print("RGB mode requested but failed, falling back to NDVI")
+            
+            # False Color Mode (NIR-Red-Green for vegetation emphasis)
+            if surface_colors is None and basemap_mode == "false_color" and 'landsat' in data and 'band' in data.landsat.dims:
+                try:
+                    print(f"Attempting false color composite (NIR-Red-Green)...")
+                    last_idx = -1
+                    landsat_data = data.landsat.isel(time=last_idx)
+                    
+                    band_names = list(data.landsat.band.values)
+                    nir_idx = next((i for i, band in enumerate(band_names) if 'NIR' in band.upper()), None)
+                    red_idx = next((i for i, band in enumerate(band_names) if 'RED' in band.upper()), None)
+                    green_idx = next((i for i, band in enumerate(band_names) if 'GREEN' in band.upper()), None)
+                    
+                    if all(idx is not None for idx in [nir_idx, red_idx, green_idx]):
+                        nir = np.array(landsat_data.isel(band=nir_idx))
+                        red = np.array(landsat_data.isel(band=red_idx))
+                        green = np.array(landsat_data.isel(band=green_idx))
+                        
+                        def normalize_band(band_data):
+                            band_clean = np.where(np.isnan(band_data), 0, band_data)
+                            valid_data = band_clean[band_clean > 0]
+                            if len(valid_data) > 0:
+                                band_min, band_max = np.percentile(valid_data, [2, 98])
+                                return np.clip((band_clean - band_min) / (band_max - band_min), 0, 1)
+                            return np.zeros_like(band_clean)
+                        
+                        nir_norm = normalize_band(nir)
+                        red_norm = normalize_band(red)
+                        green_norm = normalize_band(green)
+                        
+                        # False color composite: NIR->Red, Red->Green, Green->Blue
+                        false_color_intensity = 0.4 * nir_norm + 0.4 * red_norm + 0.2 * green_norm
+                        surface_colors = false_color_intensity
+                        basemap_type = "False Color (NIR-Red-Green)"
+                        
+                        print(f"False color composite created - NIR:{nir_norm.min():.3f}-{nir_norm.max():.3f}")
+                        
+                    else:
+                        print("Could not find NIR, Red, Green bands for false color composite")
+                        
+                except Exception as e:
+                    print(f"False color composite failed: {e}")
+            
+            # NDVI Mode (fallback or explicit)
+            if surface_colors is None and 'ndvi' in data:
+                try:
+                    print(f"Using NDVI basemap...")
+                    # Use last time step NDVI
+                    last_idx = -1
+                    ndvi_2d = np.array(data.ndvi.isel(time=last_idx))
+                    
+                    # Handle NaNs and normalize NDVI
+                    ndvi_clean = np.where(np.isnan(ndvi_2d), 0.2, ndvi_2d)
+                    # Scale NDVI from [-0.5, 1.0] to [0, 1] for better color mapping
+                    ndvi_normalized = np.clip((ndvi_clean + 0.5) / 1.5, 0, 1)
+                    
+                    surface_colors = ndvi_normalized
+                    basemap_type = "NDVI Vegetation Index"
+                    
+                    print(f"NDVI basemap created (shape: {ndvi_normalized.shape}, range: {ndvi_normalized.min():.3f}-{ndvi_normalized.max():.3f})")
+                    
+                except Exception as e:
+                    print(f"NDVI basemap failed: {e}")
+                    surface_colors = None
+            
+            # Add the raster basemap surface
+            if surface_colors is not None:
+                # Handle RGB vs single-band data differently
+                if "RGB" in basemap_type and len(surface_colors.shape) == 3:
+                    # For RGB, create a composite intensity and use a realistic earth-tone colorscale
+                    red_channel = surface_colors[:, :, 0]
+                    green_channel = surface_colors[:, :, 1]
+                    blue_channel = surface_colors[:, :, 2]
+                    
+                    # Create a weighted composite that emphasizes vegetation (green) and soil (red+blue)
+                    # This creates a more realistic satellite image appearance
+                    rgb_composite_intensity = 0.2 * red_channel + 0.6 * green_channel + 0.2 * blue_channel
+                    
+                    # Sample actual RGB values from the image to create a representative colorscale
+                    height, width = rgb_composite_intensity.shape
+                    sample_points = []
+                    
+                    # Sample RGB values across the intensity range
+                    for percentile in [5, 15, 25, 35, 45, 55, 65, 75, 85, 95]:
+                        threshold = np.percentile(rgb_composite_intensity, percentile)
+                        mask = np.abs(rgb_composite_intensity - threshold) < 0.05
+                        if np.any(mask):
+                            indices = np.where(mask)
+                            if len(indices[0]) > 0:
+                                idx = len(indices[0]) // 2  # Take middle sample
+                                r = int(red_channel[indices[0][idx], indices[1][idx]] * 255)
+                                g = int(green_channel[indices[0][idx], indices[1][idx]] * 255)
+                                b = int(blue_channel[indices[0][idx], indices[1][idx]] * 255)
+                                sample_points.append((percentile/100.0, f'rgb({r},{g},{b})'))
+                    
+                    # Ensure we have enough points for a good colorscale
+                    if len(sample_points) < 3:
+                        # Fallback to earth-tone colorscale
+                        satellite_colorscale = [
+                            [0.0, 'rgb(101,67,33)'],    # Dark brown (bare soil)
+                            [0.2, 'rgb(139,90,43)'],    # Brown
+                            [0.4, 'rgb(154,123,86)'],   # Light brown
+                            [0.6, 'rgb(144,154,70)'],   # Olive
+                            [0.8, 'rgb(107,142,35)'],   # Forest green
+                            [1.0, 'rgb(34,139,34)']     # Dark green
+                        ]
+                    else:
+                        satellite_colorscale = sample_points
+                    
+                    fig.add_trace(go.Surface(
+                        x=X_raster, y=Y_raster, z=Z_raster,
+                        surfacecolor=rgb_composite_intensity,
+                        colorscale=satellite_colorscale,
+                        cmin=0.0, cmax=1.0,
+                        opacity=0.95,
+                        showscale=True,
+                        name=f'{basemap_type} Basemap',
+                        colorbar=dict(title="RGB Composite", x=1.02, len=0.4, y=0.8),
+                        lighting=dict(ambient=0.8, diffuse=0.4, specular=0.1),
+                        hovertemplate=f'Lon: %{{x:.4f}}<br>Lat: %{{y:.4f}}<br>RGB Satellite Image<extra></extra>'
+                    ))
+                    
+                    print(f"Successfully added RGB basemap with {len(sample_points)} sampled colors ({surface_colors.shape})")
+                    
+                else:
+                    # Single-band data (NDVI, False Color intensity, etc.)
+                    if "False Color" in basemap_type:
+                        colorscale = 'Viridis'  # Good for infrared
+                        colorbar_title = "NIR Reflectance"
+                    else:  # NDVI
+                        colorscale = 'RdYlGn'  # Traditional NDVI colors
+                        colorbar_title = "NDVI"
+                    
+                    fig.add_trace(go.Surface(
+                        x=X_raster, y=Y_raster, z=Z_raster,
+                        surfacecolor=surface_colors,
+                        colorscale=colorscale,
+                        cmin=0.0, cmax=1.0,
+                        opacity=0.9,
+                        showscale=True,
+                        name=f'{basemap_type} Basemap',
+                        colorbar=dict(title=colorbar_title, x=1.02, len=0.4, y=0.8),
+                        lighting=dict(ambient=0.9, diffuse=0.3, specular=0.1),
+                        hovertemplate=f'Lon: %{{x:.4f}}<br>Lat: %{{y:.4f}}<br>{basemap_type}<extra></extra>'
+                    ))
+                    
+                    print(f"Successfully added {basemap_type} basemap with {surface_colors.shape} pixels")
+            
+        else:
+            # Fallback: create simplified basemap from cluster data 
+            print("No xarray data available, using simplified cluster-based basemap")
+            all_pixels = []
+            for cube in valid_cubes:
+                all_pixels.extend(self._get_pixels_safely(cube))
+            
+            if all_pixels:
+                y_coords, x_coords = zip(*all_pixels)
+                y_min, y_max = min(y_coords), max(y_coords)
+                x_min, x_max = min(x_coords), max(x_coords)
+                
+                # Create a simple grid
+                grid_size = 50
+                x_simple = np.linspace(x_min, x_max, grid_size)
+                y_simple = np.linspace(y_min, y_max, grid_size)
+                X_simple, Y_simple = np.meshgrid(x_simple, y_simple)
+                Z_simple = np.full_like(X_simple, 1983)
+                
+                # Create NDVI surface from cluster data
+                ndvi_surface = np.full_like(X_simple, 0.3)
+                for cube in valid_cubes:
+                    pixels = self._get_pixels_safely(cube)
+                    mean_ndvi = np.clip(cube.get('mean_ndvi', 0.5), 0.0, 1.0)
+                    for px_y, px_x in pixels:
+                        i = np.argmin(np.abs(y_simple - px_y))
+                        j = np.argmin(np.abs(x_simple - px_x))
+                        ndvi_surface[i, j] = max(ndvi_surface[i, j], mean_ndvi)
+                
+                fig.add_trace(go.Surface(
+                    x=X_simple, y=Y_simple, z=Z_simple, surfacecolor=ndvi_surface,
+                    colorscale='RdYlGn', cmin=0.0, cmax=1.0, opacity=0.7,
+                    showscale=True, name='Cluster NDVI Basemap',
+                    colorbar=dict(title="NDVI", x=1.02, len=0.4, y=0.8)
+                ))
+
+        # Add 3D cluster points with coordinate transformation
         max_time_steps = min(15, len(time_coords))
+        
+        # Transform cluster pixel coordinates to geographic coordinates if needed
+        def transform_pixel_to_geo(px_y, px_x, data):
+            """Transform pixel coordinates to geographic coordinates."""
+            if hasattr(data, 'x') and hasattr(data, 'y'):
+                x_coords = np.array(data.x)
+                y_coords = np.array(data.y)
+                
+                # Handle bounds checking
+                if 0 <= px_x < len(x_coords) and 0 <= px_y < len(y_coords):
+                    return y_coords[px_y], x_coords[px_x]  # Return lat, lon
+                else:
+                    # Interpolate if outside bounds
+                    x_interp = np.interp(px_x, range(len(x_coords)), x_coords)
+                    y_interp = np.interp(px_y, range(len(y_coords)), y_coords)
+                    return y_interp, x_interp
+            else:
+                # No transformation needed
+                return px_y, px_x
+        
         for time_idx in range(max_time_steps):
             actual_year = actual_years[time_idx]
-            
             for cube_idx, cube in enumerate(valid_cubes[:8]):  # Limit for performance
                 pixels = self._get_pixels_safely(cube)
                 ndvi_profile = self._get_ndvi_profile(cube)
-                
                 if time_idx < len(ndvi_profile) and pixels:
-                    px_coords = np.array(pixels)
-                    y_vals, x_vals = px_coords[:, 0], px_coords[:, 1]
+                    # Transform pixel coordinates to geographic coordinates
+                    geo_coords = [transform_pixel_to_geo(px_y, px_x, data) for px_y, px_x in pixels]
+                    y_vals, x_vals = zip(*geo_coords)
+                    
                     z_vals = np.full(len(pixels), actual_year)
                     ndvi_vals = np.full(len(pixels), ndvi_profile[time_idx])
                     
                     fig.add_trace(go.Scatter3d(
                         x=x_vals, y=y_vals, z=z_vals, mode='markers',
-                        marker=dict(size=3, color=ndvi_vals, colorscale='RdYlGn', 
-                                  cmin=0.0, cmax=1.0, showscale=False, opacity=0.8),
+                        marker=dict(size=4, color=ndvi_vals, colorscale='RdYlGn', 
+                                  cmin=0.0, cmax=1.0, showscale=False, opacity=0.9,
+                                  line=dict(width=1, color='black')),
                         name=f'Cluster {cube_idx+1} - {actual_year}',
-                        text=[f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_profile[time_idx]:.3f}' 
-                              for _ in range(len(pixels))],
+                        text=[f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_profile[time_idx]:.3f}<br>Lat: {y:.4f}, Lon: {x:.4f}' 
+                              for x, y in zip(x_vals, y_vals)],
                         hovertemplate='%{text}<extra></extra>',
                         showlegend=(time_idx == 0)
                     ))
-        
-        # Update layout
+
+        # Update layout with improved 3D scene
         fig.update_layout(
-            title=f'{title} - {len(valid_cubes)} Vegetation Clusters (1984-2025)',
+            title=f'{title} - {len(valid_cubes)} Vegetation Clusters with Satellite Basemap',
             scene=dict(
-                xaxis_title='X Coordinate', yaxis_title='Y Coordinate', zaxis_title='Year',
-                zaxis=dict(tickmode='array', tickvals=[1984, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2025],
-                          ticktext=['1984', '1990', '1995', '2000', '2005', '2010', '2015', '2020', '2025']),
-                camera=dict(eye=dict(x=1.5, y=1.5, z=1.2)),
-                aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.6)
+                xaxis_title='Longitude', 
+                yaxis_title='Latitude', 
+                zaxis_title='Year',
+                zaxis=dict(
+                    tickmode='array', 
+                    tickvals=[1983, 1984, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2025],
+                    ticktext=['1984', '1990', '1995', '2000', '2005', '2010', '2015', '2020', '2025']
+                ),
+                camera=dict(eye=dict(x=1.5, y=1.5, z=1.2)),  # Better angle to see basemap
+                aspectmode='manual', 
+                aspectratio=dict(x=1, y=1, z=0.6),  # Compress Z-axis for better basemap visibility
+                bgcolor='rgba(0,0,0,0)',  # Transparent background
             ),
-            width=1200, height=800, margin=dict(l=0, r=0, t=50, b=0)
+            width=1400, height=900, 
+            margin=dict(l=0, r=100, t=50, b=0)  # Extra margin for colorbar
         )
-        
+
         pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
         print(f"3D spatiotemporal visualization saved to: {self.output_dir / filename}")
         return str(self.output_dir / filename)
