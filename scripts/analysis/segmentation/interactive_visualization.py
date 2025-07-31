@@ -302,7 +302,7 @@ class InteractiveVisualization:
                         all_k_indices = []
                         
                         half_size = cube_size / 2
-                        time_half_size = 0.3  # Small temporal extent
+                        time_half_size = 0.45  # Small temporal extent
                         
                         for vertex_offset, (geo_y, geo_x) in enumerate(geo_coords):
                             # Define cube vertices (8 corners) for this pixel
@@ -324,9 +324,9 @@ class InteractiveVisualization:
                             # Bottom face (z-min): vertices 0,1,2,3
                             # Top face (z-max): vertices 4,5,6,7
                             # Side faces connecting bottom to top
-                            cube_i = [0, 0, 1, 1, 2, 2, 3, 3, 0, 0, 4, 4]  # 4 side faces + bottom + top
-                            cube_j = [1, 3, 2, 5, 3, 6, 0, 7, 1, 2, 6, 7]
-                            cube_k = [4, 7, 6, 4, 7, 5, 4, 6, 2, 3, 5, 6]
+                            cube_i = [0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1]
+                            cube_j = [1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6]
+                            cube_k = [2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5]
                             
                             # Offset indices for this cube
                             all_i_indices.extend([i + base_idx for i in cube_i])
@@ -342,7 +342,6 @@ class InteractiveVisualization:
                             colorscale='RdYlGn',
                             cmin=0.0, cmax=1.0,
                             showscale=False,
-                            opacity=0.8,
                             name=f'Cluster {cube_idx+1} - {actual_year}',
                             showlegend=(time_idx == 0),
                             hovertemplate=f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>'
@@ -357,7 +356,7 @@ class InteractiveVisualization:
                 zaxis_title='Year',
                 camera=dict(eye=dict(x=1.5, y=1.5, z=1.2)),
                 aspectmode='manual', 
-                aspectratio=dict(x=1, y=1, z=0.6)
+                aspectratio=dict(x=1, y=1, z=0.05)
             ),
             width=1400, 
             height=900
