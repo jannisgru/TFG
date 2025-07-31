@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """Interactive HTML Plotly Visualization for Vegetation ST-Cube Segmentation Results"""
 
+# ==== CONFIGURABLE PARAMETERS ====
+OUTPUT_DIRECTORY = "outputs/interactive_vegetation"
+MAX_CLUSTERS_TO_DISPLAY = 50
+DOWNSAMPLE_FACTOR = 2
+COLOR_PALETTE = "Set3"
+FIGURE_WIDTH = 1200
+FIGURE_HEIGHT = 800
+BASEMAP_TYPE = "rgb"  # Options: "rgb" or "ndvi"
+# ================================
+
 import numpy as np
 import xarray as xr
 import plotly.graph_objects as go
@@ -8,13 +18,16 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.offline as pyo
 from pathlib import Path
-from typing import List, Dict, Tuple, Union
+from typing import List, Dict, Any, Tuple, Optional, Union
+import pandas as pd
 import warnings
+from scipy.ndimage import zoom
 from loguru import logger
 
 warnings.filterwarnings('ignore')
 
 import sys
+import os
 scripts_dir = Path(__file__).parent.parent.parent
 sys.path.append(str(scripts_dir))
 
@@ -27,46 +40,61 @@ except ImportError:
 class InteractiveVisualization:
     """Interactive HTML visualization generator for vegetation ST-cube segmentation results."""
     
-    def __init__(self, output_directory: str = "outputs/interactive_vegetation"):
+    def __init__(self, output_directory: str = OUTPUT_DIRECTORY):
         """Initialize the visualization generator."""
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.color_palette = px.colors.qualitative.Set3
-        logger.info(f"Initialized - Output: {self.output_dir}")
+        self.color_palette = getattr(px.colors.qualitative, COLOR_PALETTE)
+        logger.info(f"Visualization generator initialized - Output: {self.output_dir}")
+    
+    def _extract_safe_data(self, cube: Dict, key: str, default=None):
+        """Safely extract data from cube, handling arrays and lists."""
+        data = cube.get(key, default)
+        if data is None:
+            return default
+        if isinstance(data, np.ndarray):
+            return data.tolist() if data.size > 0 else (default or [])
+        return data if data else (default or [])
     
     def _get_pixels_safely(self, cube: Dict) -> List[Tuple[int, int]]:
-        """Extract pixel coordinates from cube."""
+        """Extract pixel coordinates, checking multiple possible keys."""
         for key in ['pixels', 'coordinates']:
-            pixels = cube.get(key, [])
-            if pixels and isinstance(pixels[0], (list, tuple)) and len(pixels[0]) == 2:
-                return [tuple(p) for p in pixels]
+            pixels = self._extract_safe_data(cube, key, [])
+            if pixels:
+                if isinstance(pixels[0], (list, tuple)) and len(pixels[0]) == 2:
+                    return [tuple(p) for p in pixels]
+                elif len(pixels) == 2 and isinstance(pixels[0], (int, float)):
+                    return [tuple(pixels)]
         return []
     
     def _get_ndvi_profile(self, cube: Dict) -> List[float]:
-        """Extract NDVI temporal profile from cube."""
+        """Extract NDVI temporal profile, checking multiple possible keys."""
         for key in ['ndvi_profile', 'mean_temporal_profile', 'ndvi_time_series']:
-            profile = cube.get(key, [])
+            profile = self._extract_safe_data(cube, key, [])
             if profile:
-                return profile if isinstance(profile, list) else profile.tolist()
+                return profile
         return []
     
     def _is_valid_cube(self, cube: Dict) -> bool:
-        """Check if cube has valid pixels and NDVI data."""
+        """Check if cube has both valid pixels and NDVI data."""
         return len(self._get_pixels_safely(cube)) > 0 and len(self._get_ndvi_profile(cube)) > 0
     
     def create_all_visualizations(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str], 
-                                municipality_name: str = "Unknown", basemap_mode: str = "rgb") -> Dict[str, str]:
+                                municipality_name: str = "Unknown", basemap_mode: str = BASEMAP_TYPE) -> Dict[str, str]:
         """Create spatial map and 3D spatiotemporal visualizations for vegetation clusters."""
         logger.info(f"Creating visualizations for '{municipality_name}' ({basemap_mode} basemap)")
         
         processed_cubes = self._process_cube_data(cubes, data)
         valid_cubes = [c for c in processed_cubes if self._is_valid_cube(c)]
         
+        logger.info(f"Processing {len(valid_cubes)} valid clusters out of {len(processed_cubes)} total")
+        
         if not valid_cubes:
             logger.warning("No valid vegetation clusters found")
             return {}
         
         visualizations = {}
+        
         viz_configs = [
             ("spatial_map", self.create_interactive_spatial_map, f"Vegetation Clusters - {municipality_name}"),
             ("3d_spatiotemporal", self.create_3d_spatiotemporal_visualization, f"3D Spatiotemporal View - {municipality_name}")
@@ -75,6 +103,8 @@ class InteractiveVisualization:
         for viz_name, viz_func, title in viz_configs:
             filename = f"{viz_name}_{municipality_name.replace(' ', '_')}.html"
             try:
+                logger.info(f"Generating {viz_name}...")
+                
                 args = [valid_cubes, filename, title]
                 if viz_name == "3d_spatiotemporal":
                     args.insert(1, data)
@@ -83,10 +113,15 @@ class InteractiveVisualization:
                 result = viz_func(*args)
                 if result is not None:
                     visualizations[viz_name] = str(self.output_dir / filename)
-                    logger.success(f"Created {viz_name}")
+                    logger.success(f"✓ {viz_name} saved successfully")
+                else:
+                    logger.error(f"✗ {viz_name} generation failed")
                     
             except Exception as e:
-                logger.error(f"Failed to create {viz_name}: {str(e)}")
+                logger.error(f"✗ Error in {viz_name}: {str(e)}")
+        
+        if visualizations:
+            logger.success(f"Created {len(visualizations)} visualizations in: {self.output_dir}")
         
         return visualizations
     
@@ -97,24 +132,17 @@ class InteractiveVisualization:
         
         for i, cube in enumerate(cubes):
             if isinstance(cube, STCube):
-                # Convert STCube to dict
-                cube_dict = {
-                    'id': getattr(cube, 'id', i),
-                    'pixels': getattr(cube, 'pixels', []),
-                    'area': getattr(cube, 'area', 0),
-                    'ndvi_profile': getattr(cube, 'ndvi_profile', []),
-                    'temporal_extent': getattr(cube, 'temporal_extent', (0, time_length)),
-                    'heterogeneity': getattr(cube, 'heterogeneity', 0.0),
-                    'vegetation_type': 'Unknown',
-                    'seasonality_score': 0.0,
-                    'trend_score': 0.0
-                }
-                if cube_dict['ndvi_profile']:
-                    cube_dict['mean_ndvi'] = np.mean(cube_dict['ndvi_profile'])
-                else:
-                    cube_dict['mean_ndvi'] = 0.5
+                # Process STCube objects
+                cube_dict = {k: getattr(cube, k, default) for k, default in [
+                    ('id', i), ('pixels', []), ('area', 0), ('ndvi_profile', []), 
+                    ('temporal_extent', (0, 0)), ('heterogeneity', 0.0)
+                ]}
+                cube_dict.update({
+                    'mean_ndvi': np.mean(cube_dict['ndvi_profile']) if cube_dict['ndvi_profile'] else 0.5,
+                    'vegetation_type': 'Unknown', 'seasonality_score': 0.0, 'trend_score': 0.0
+                })
             else:
-                # Process dict cube
+                # Process dictionary cubes
                 pixels = self._get_pixels_safely(cube)
                 ndvi_profile = self._get_ndvi_profile(cube)
                 cube_dict = {
@@ -136,17 +164,19 @@ class InteractiveVisualization:
     def create_interactive_spatial_map(self, cubes: List[Dict], filename: str, title: str = "Vegetation Clusters"):
         """Create an interactive spatial map showing vegetation cluster boundaries and NDVI patterns."""
         if not cubes:
+            logger.warning("No cubes provided for spatial map")
             return None
         
-        # Get spatial bounds
+        # Extract all pixels to determine spatial bounds
         all_pixels = [p for cube in cubes for p in self._get_pixels_safely(cube)]
         if not all_pixels:
+            logger.warning("No valid pixels found for spatial map")
             return None
         
         y_coords, x_coords = zip(*all_pixels)
         y_min, y_max, x_min, x_max = min(y_coords), max(y_coords), min(x_coords), max(x_coords)
         
-        # Create maps
+        # Create segmentation and NDVI maps
         seg_map = np.full((y_max - y_min + 1, x_max - x_min + 1), -1, dtype=int)
         ndvi_map = np.full((y_max - y_min + 1, x_max - x_min + 1), np.nan, dtype=float)
         
@@ -156,7 +186,7 @@ class InteractiveVisualization:
                     seg_map[y - y_min, x - x_min] = i
                     ndvi_map[y - y_min, x - x_min] = cube['mean_ndvi']
         
-        # Create figure
+        # Create subplot figure
         fig = make_subplots(rows=1, cols=2, subplot_titles=['NDVI Distribution', 'Cluster Boundaries'],
                            specs=[[{"type": "heatmap"}, {"type": "scatter"}]])
         
@@ -165,7 +195,7 @@ class InteractiveVisualization:
                                 colorscale='RdYlGn', name='NDVI', colorbar=dict(title="Mean NDVI", x=0.48),
                                 hovertemplate='X: %{x}<br>Y: %{y}<br>NDVI: %{z:.3f}<extra></extra>'), row=1, col=1)
         
-        # Add cluster points
+        # Add cluster scatter points
         for i, cube in enumerate(cubes):
             pixels = self._get_pixels_safely(cube)
             if pixels:
@@ -174,7 +204,7 @@ class InteractiveVisualization:
                                        marker=dict(size=3, color=self.color_palette[i % len(self.color_palette)], 
                                                   line=dict(width=1, color='black')),
                                        name=f'Cluster {i} (NDVI: {cube["mean_ndvi"]:.3f})',
-                                       hovertemplate=f'Cluster {i}<br>Area: {cube["area"]} pixels<br>Mean NDVI: {cube["mean_ndvi"]:.3f}<extra></extra>'), row=1, col=2)
+                                       hovertemplate=f'Cluster {i}<br>Area: {cube["area"]} pixels<br>Mean NDVI: {cube["mean_ndvi"]:.3f}<br>Type: {cube["vegetation_type"]}<extra></extra>'), row=1, col=2)
         
         # Update layout
         fig.update_layout(title=f'{title}<br>Total Clusters: {len(cubes)}', width=1400, height=600, hovermode='closest')
@@ -182,6 +212,7 @@ class InteractiveVisualization:
             fig.update_xaxes(title_text="X Coordinate", row=1, col=col)
             fig.update_yaxes(title_text="Y Coordinate", row=1, col=col)
         
+        # Save visualization
         pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
         return fig
     
@@ -213,8 +244,6 @@ class InteractiveVisualization:
             X_raster, Y_raster = np.meshgrid(x_coords_data, y_coords_data)
             Z_raster = np.full_like(X_raster, 1983)
             
-            logger.debug(f"Attempting {basemap_mode} basemap creation...")
-            
             if basemap_mode == "rgb" and 'landsat' in data and 'band' in data.landsat.dims:
                 basemap_created = self.create_rgb_basemap(data, fig, X_raster, Y_raster, Z_raster)
             elif basemap_mode == "ndvi" and 'ndvi' in data:
@@ -241,7 +270,20 @@ class InteractiveVisualization:
                     return y_interp, x_interp
             return px_y, px_x
 
-        # Add 3D spatiotemporal points
+        # Add 3D spatiotemporal cubes using Mesh3D for proper cube visualization
+        # Determine appropriate cube size based on coordinate system scale
+        if hasattr(data, 'x') and hasattr(data, 'y'):
+            x_coords_data = np.array(data.x)
+            y_coords_data = np.array(data.y)
+            if len(x_coords_data) > 1 and len(y_coords_data) > 1:
+                x_resolution = abs(x_coords_data[1] - x_coords_data[0])
+                y_resolution = abs(y_coords_data[1] - y_coords_data[0])
+                cube_size = min(x_resolution, y_resolution) * 0.8  # 80% of pixel size
+            else:
+                cube_size = 0.0003  # Fallback small size
+        else:
+            cube_size = 0.5  # Fallback for pixel coordinates
+        
         for time_idx in range(min(15, n_time_steps)):  # Limit for performance
             actual_year = actual_years[time_idx]
             for cube_idx, cube in enumerate(valid_cubes[:8]):  # Limit clusters for performance
@@ -249,24 +291,62 @@ class InteractiveVisualization:
                 ndvi_profile = self._get_ndvi_profile(cube)
                 if time_idx < len(ndvi_profile) and pixels:
                     geo_coords = [transform_pixel_to_geo(px_y, px_x, data) for px_y, px_x in pixels]
-                    y_vals, x_vals = zip(*geo_coords)
-                    z_vals = np.full(len(pixels), actual_year)
-                    ndvi_vals = np.full(len(pixels), ndvi_profile[time_idx])
                     
-                    fig.add_trace(go.Scatter3d(
-                        x=x_vals, y=y_vals, z=z_vals, 
-                        mode='markers',
-                        marker=dict(
-                            size=4, 
-                            color=ndvi_vals, 
-                            colorscale='RdYlGn', 
-                            cmin=0.0, cmax=1.0, 
-                            showscale=False, 
-                            opacity=0.9
-                        ),
-                        name=f'Cluster {cube_idx+1} - {actual_year}',
-                        showlegend=(time_idx == 0)
-                    ))
+                    # Batch create cubes for better performance - combine multiple pixels into one mesh
+                    if geo_coords:
+                        all_x_coords = []
+                        all_y_coords = []
+                        all_z_coords = []
+                        all_i_indices = []
+                        all_j_indices = []
+                        all_k_indices = []
+                        
+                        half_size = cube_size / 2
+                        time_half_size = 0.3  # Small temporal extent
+                        
+                        for vertex_offset, (geo_y, geo_x) in enumerate(geo_coords):
+                            # Define cube vertices (8 corners) for this pixel
+                            base_idx = vertex_offset * 8
+                            
+                            # Add 8 vertices for this cube
+                            cube_x = [geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size,
+                                     geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size]
+                            cube_y = [geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size,
+                                     geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size]
+                            cube_z = [actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size,
+                                     actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size]
+                            
+                            all_x_coords.extend(cube_x)
+                            all_y_coords.extend(cube_y)
+                            all_z_coords.extend(cube_z)
+                            
+                            # Define cube faces using vertex indices (12 triangles for 6 faces)
+                            # Bottom face (z-min): vertices 0,1,2,3
+                            # Top face (z-max): vertices 4,5,6,7
+                            # Side faces connecting bottom to top
+                            cube_i = [0, 0, 1, 1, 2, 2, 3, 3, 0, 0, 4, 4]  # 4 side faces + bottom + top
+                            cube_j = [1, 3, 2, 5, 3, 6, 0, 7, 1, 2, 6, 7]
+                            cube_k = [4, 7, 6, 4, 7, 5, 4, 6, 2, 3, 5, 6]
+                            
+                            # Offset indices for this cube
+                            all_i_indices.extend([i + base_idx for i in cube_i])
+                            all_j_indices.extend([j + base_idx for j in cube_j])
+                            all_k_indices.extend([k + base_idx for k in cube_k])
+                        
+                        ndvi_val = ndvi_profile[time_idx]
+                        
+                        fig.add_trace(go.Mesh3d(
+                            x=all_x_coords, y=all_y_coords, z=all_z_coords,
+                            i=all_i_indices, j=all_j_indices, k=all_k_indices,
+                            intensity=np.full(len(all_x_coords), ndvi_val),
+                            colorscale='RdYlGn',
+                            cmin=0.0, cmax=1.0,
+                            showscale=False,
+                            opacity=0.8,
+                            name=f'Cluster {cube_idx+1} - {actual_year}',
+                            showlegend=(time_idx == 0),
+                            hovertemplate=f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>'
+                        ))
 
         # Update layout
         fig.update_layout(
@@ -304,22 +384,16 @@ class InteractiveVisualization:
                     if color in bands:
                         break
             
-            logger.debug(f"Found spectral bands: {list(bands.keys())}")
-            
             # Create composite based on available bands
             if 'nir' in bands and 'red' in bands and 'green' in bands:
                 composite = 0.6 * bands['nir'] + 0.3 * bands['red'] + 0.1 * bands['green']
-                logger.debug("Using NIR-Red-Green false color composite")
             elif 'red' in bands and 'green' in bands and 'blue' in bands:
                 composite = 0.3 * bands['red'] + 0.6 * bands['green'] + 0.1 * bands['blue']
-                logger.debug("Using RGB natural color composite")
             elif 'nir' in bands and 'red' in bands:
                 with np.errstate(divide='ignore', invalid='ignore'):
                     composite = (bands['nir'] - bands['red']) / (bands['nir'] + bands['red'])
-                logger.debug("Using NDVI-like composite")
             else:
                 composite = list(bands.values())[0]
-                logger.debug("Using single band fallback")
             
             valid_mask = ~np.isnan(composite)
             
@@ -344,11 +418,9 @@ class InteractiveVisualization:
                     surfacecolor=composite_masked,
                     colorscale='geyser',
                     opacity=0.9,
-                    name='RGB Basemap',
                     showscale=False
                 ))
                 
-                logger.debug("RGB basemap created successfully")
                 return True
             
             return False
@@ -365,14 +437,12 @@ class InteractiveVisualization:
             valid_mask = ~np.isnan(ndvi_2d)
             ndvi_masked = np.where(valid_mask, ndvi_2d, np.nan)
             
+                
             valid_ndvi = ndvi_2d[valid_mask]
             if len(valid_ndvi) == 0:
                 logger.warning("No valid NDVI data found")
                 return False
                 
-            min_ndvi, max_ndvi = np.min(valid_ndvi), np.max(valid_ndvi)
-            logger.debug(f"NDVI range: {min_ndvi:.3f} to {max_ndvi:.3f}")
-            
             X_masked = np.where(valid_mask, X_raster, np.nan)
             Y_masked = np.where(valid_mask, Y_raster, np.nan)
             Z_masked = np.where(valid_mask, Z_raster, np.nan)
@@ -387,11 +457,9 @@ class InteractiveVisualization:
                 cmin=-0.5,
                 cmax=1.0,
                 opacity=0.9, 
-                name='NDVI Basemap',
                 showscale=False
             ))
             
-            logger.debug("NDVI basemap created successfully")
             return True
             
         except Exception as e:
