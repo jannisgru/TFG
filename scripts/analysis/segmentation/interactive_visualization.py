@@ -3,25 +3,17 @@
 
 # ==== CONFIGURABLE PARAMETERS ====
 OUTPUT_DIRECTORY = "outputs/interactive_vegetation"
-MAX_CLUSTERS_TO_DISPLAY = 50
-DOWNSAMPLE_FACTOR = 2
-COLOR_PALETTE = "Set3"
-FIGURE_WIDTH = 1200
-FIGURE_HEIGHT = 800
-BASEMAP_TYPE = "rgb"  # Options: "rgb" or "ndvi"
+FIGURE_WIDTH = 1400
+FIGURE_HEIGHT = 900
 # ================================
 
 import numpy as np
 import xarray as xr
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 import plotly.offline as pyo
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
-import pandas as pd
 import warnings
-from scipy.ndimage import zoom
 from loguru import logger
 
 warnings.filterwarnings('ignore')
@@ -44,7 +36,6 @@ class InteractiveVisualization:
         """Initialize the visualization generator."""
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.color_palette = getattr(px.colors.qualitative, COLOR_PALETTE)
         logger.info(f"Visualization generator initialized - Output: {self.output_dir}")
     
     def _extract_safe_data(self, cube: Dict, key: str, default=None):
@@ -80,9 +71,9 @@ class InteractiveVisualization:
         return len(self._get_pixels_safely(cube)) > 0 and len(self._get_ndvi_profile(cube)) > 0
     
     def create_all_visualizations(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str], 
-                                municipality_name: str = "Unknown", basemap_mode: str = BASEMAP_TYPE) -> Dict[str, str]:
-        """Create spatial map and 3D spatiotemporal visualizations for vegetation clusters."""
-        logger.info(f"Creating visualizations for '{municipality_name}' ({basemap_mode} basemap)")
+                                municipality_name: str = "Unknown") -> Dict[str, str]:
+        """Create 3D spatiotemporal visualization for vegetation clusters."""
+        logger.info(f"Creating 3D visualization for '{municipality_name}'")
         
         processed_cubes = self._process_cube_data(cubes, data)
         valid_cubes = [c for c in processed_cubes if self._is_valid_cube(c)]
@@ -93,37 +84,24 @@ class InteractiveVisualization:
             logger.warning("No valid vegetation clusters found")
             return {}
         
-        visualizations = {}
+        filename = f"3d_spatiotemporal_{municipality_name.replace(' ', '_')}.html"
+        title = f"3D Spatiotemporal View - {municipality_name}"
         
-        viz_configs = [
-            ("spatial_map", self.create_interactive_spatial_map, f"Vegetation Clusters - {municipality_name}"),
-            ("3d_spatiotemporal", self.create_3d_spatiotemporal_visualization, f"3D Spatiotemporal View - {municipality_name}")
-        ]
-        
-        for viz_name, viz_func, title in viz_configs:
-            filename = f"{viz_name}_{municipality_name.replace(' ', '_')}.html"
-            try:
-                logger.info(f"Generating {viz_name}...")
+        try:
+            logger.info(f"Generating 3D spatiotemporal visualization...")
+            
+            result = self.create_3d_spatiotemporal_visualization(valid_cubes, data, filename, title)
+            
+            if result is not None:
+                logger.success(f"✓ 3D visualization saved successfully")
+                return {"3d_spatiotemporal": str(self.output_dir / filename)}
+            else:
+                logger.error(f"✗ 3D visualization generation failed")
+                return {}
                 
-                args = [valid_cubes, filename, title]
-                if viz_name == "3d_spatiotemporal":
-                    args.insert(1, data)
-                    args.append(basemap_mode)
-                
-                result = viz_func(*args)
-                if result is not None:
-                    visualizations[viz_name] = str(self.output_dir / filename)
-                    logger.success(f"✓ {viz_name} saved successfully")
-                else:
-                    logger.error(f"✗ {viz_name} generation failed")
-                    
-            except Exception as e:
-                logger.error(f"✗ Error in {viz_name}: {str(e)}")
-        
-        if visualizations:
-            logger.success(f"Created {len(visualizations)} visualizations in: {self.output_dir}")
-        
-        return visualizations
+        except Exception as e:
+            logger.error(f"✗ Error in 3D visualization: {str(e)}")
+            return {}
     
     def _process_cube_data(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str]) -> List[Dict]:
         """Process cube data into a consistent format for visualization."""
@@ -161,63 +139,8 @@ class InteractiveVisualization:
         
         return processed_cubes
     
-    def create_interactive_spatial_map(self, cubes: List[Dict], filename: str, title: str = "Vegetation Clusters"):
-        """Create an interactive spatial map showing vegetation cluster boundaries and NDVI patterns."""
-        if not cubes:
-            logger.warning("No cubes provided for spatial map")
-            return None
-        
-        # Extract all pixels to determine spatial bounds
-        all_pixels = [p for cube in cubes for p in self._get_pixels_safely(cube)]
-        if not all_pixels:
-            logger.warning("No valid pixels found for spatial map")
-            return None
-        
-        y_coords, x_coords = zip(*all_pixels)
-        y_min, y_max, x_min, x_max = min(y_coords), max(y_coords), min(x_coords), max(x_coords)
-        
-        # Create segmentation and NDVI maps
-        seg_map = np.full((y_max - y_min + 1, x_max - x_min + 1), -1, dtype=int)
-        ndvi_map = np.full((y_max - y_min + 1, x_max - x_min + 1), np.nan, dtype=float)
-        
-        for i, cube in enumerate(cubes):
-            for y, x in self._get_pixels_safely(cube):
-                if y_min <= y <= y_max and x_min <= x <= x_max:
-                    seg_map[y - y_min, x - x_min] = i
-                    ndvi_map[y - y_min, x - x_min] = cube['mean_ndvi']
-        
-        # Create subplot figure
-        fig = make_subplots(rows=1, cols=2, subplot_titles=['NDVI Distribution', 'Cluster Boundaries'],
-                           specs=[[{"type": "heatmap"}, {"type": "scatter"}]])
-        
-        # Add NDVI heatmap
-        fig.add_trace(go.Heatmap(z=ndvi_map, x=list(range(x_min, x_max + 1)), y=list(range(y_min, y_max + 1)),
-                                colorscale='RdYlGn', name='NDVI', colorbar=dict(title="Mean NDVI", x=0.48),
-                                hovertemplate='X: %{x}<br>Y: %{y}<br>NDVI: %{z:.3f}<extra></extra>'), row=1, col=1)
-        
-        # Add cluster scatter points
-        for i, cube in enumerate(cubes):
-            pixels = self._get_pixels_safely(cube)
-            if pixels:
-                y_vals, x_vals = zip(*pixels)
-                fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='markers',
-                                       marker=dict(size=3, color=self.color_palette[i % len(self.color_palette)], 
-                                                  line=dict(width=1, color='black')),
-                                       name=f'Cluster {i} (NDVI: {cube["mean_ndvi"]:.3f})',
-                                       hovertemplate=f'Cluster {i}<br>Area: {cube["area"]} pixels<br>Mean NDVI: {cube["mean_ndvi"]:.3f}<br>Type: {cube["vegetation_type"]}<extra></extra>'), row=1, col=2)
-        
-        # Update layout
-        fig.update_layout(title=f'{title}<br>Total Clusters: {len(cubes)}', width=1400, height=600, hovermode='closest')
-        for col in [1, 2]:
-            fig.update_xaxes(title_text="X Coordinate", row=1, col=col)
-            fig.update_yaxes(title_text="Y Coordinate", row=1, col=col)
-        
-        # Save visualization
-        pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
-        return fig
-    
-    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View", basemap_mode: str = "rgb"):
-        """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis."""
+    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View"):
+        """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis, using a grayscale basemap."""
         if not cubes:
             logger.warning("No cubes provided for 3D visualization")
             return None
@@ -237,25 +160,12 @@ class InteractiveVisualization:
         fig = go.Figure()
 
         # Create basemap
-        basemap_created = False
-        if hasattr(data, 'dims') and hasattr(data, 'x') and hasattr(data, 'y'):
+        if hasattr(data, 'dims') and hasattr(data, 'x') and hasattr(data, 'y') and 'landsat' in data and 'band' in data.landsat.dims:
             x_coords_data = np.array(data.x)
             y_coords_data = np.array(data.y)
             X_raster, Y_raster = np.meshgrid(x_coords_data, y_coords_data)
             Z_raster = np.full_like(X_raster, 1983)
-            
-            if basemap_mode == "rgb" and 'landsat' in data and 'band' in data.landsat.dims:
-                basemap_created = self.create_rgb_basemap(data, fig, X_raster, Y_raster, Z_raster)
-            elif basemap_mode == "ndvi" and 'ndvi' in data:
-                basemap_created = self.create_ndvi_basemap(data, fig, X_raster, Y_raster, Z_raster)
-            
-            # Try fallback basemap
-            if not basemap_created:
-                logger.warning(f"Primary {basemap_mode} basemap failed, trying fallback...")
-                if basemap_mode == "rgb" and 'ndvi' in data:
-                    basemap_created = self.create_ndvi_basemap(data, fig, X_raster, Y_raster, Z_raster)
-                elif basemap_mode == "ndvi" and 'landsat' in data and 'band' in data.landsat.dims:
-                    basemap_created = self.create_rgb_basemap(data, fig, X_raster, Y_raster, Z_raster)
+            self.create_basemap(data, fig, X_raster, Y_raster, Z_raster)
 
         # Transform pixel coordinates to geographic coordinates
         def transform_pixel_to_geo(px_y, px_x, data):
@@ -349,7 +259,7 @@ class InteractiveVisualization:
 
         # Update layout
         fig.update_layout(
-            title=f'{title} - {len(valid_cubes)} Vegetation Clusters ({basemap_mode.upper()} Basemap)',
+            title=f'{title} - {len(valid_cubes)} Vegetation Clusters',
             scene=dict(
                 xaxis_title='Longitude', 
                 yaxis_title='Latitude', 
@@ -366,107 +276,77 @@ class InteractiveVisualization:
         pyo.plot(fig, filename=str(self.output_dir / filename), auto_open=False)
         return str(self.output_dir / filename)
 
-    def create_rgb_basemap(self, data, fig, X_raster, Y_raster, Z_raster):
-        """Create RGB natural color composite basemap."""
+    def create_basemap(self, data, fig, X_raster, Y_raster, Z_raster):
+        """Create smooth grayscale basemap with gentle contrast and lighter darks."""
         try:
             landsat_data = data.landsat.isel(time=-1)
             band_names = list(data.landsat.band.values)
-            
-            # Find spectral bands
-            bands = {}
-            for color, targets in [('red', ['RED']), ('green', ['GREEN']), ('blue', ['BLUE']), ('nir', ['NIR'])]:
-                for target in targets:
-                    for i, band in enumerate(band_names):
-                        if target in band.upper():
-                            bands[color] = np.array(landsat_data.isel(band=i))
-                            break
-                    if color in bands:
-                        break
-            
-            # Create composite based on available bands
-            if 'nir' in bands and 'red' in bands and 'green' in bands:
-                composite = 0.6 * bands['nir'] + 0.3 * bands['red'] + 0.1 * bands['green']
-            elif 'red' in bands and 'green' in bands and 'blue' in bands:
-                composite = 0.3 * bands['red'] + 0.6 * bands['green'] + 0.1 * bands['blue']
-            elif 'nir' in bands and 'red' in bands:
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    composite = (bands['nir'] - bands['red']) / (bands['nir'] + bands['red'])
+            # Get any available band for grayscale
+            if len(band_names) > 0:
+                single_band = np.array(landsat_data.isel(band=0))
             else:
-                composite = list(bands.values())[0]
-            
-            valid_mask = ~np.isnan(composite)
-            
+                return False
+            # Check for valid data
+            valid_mask = ~np.isnan(single_band)
             if np.any(valid_mask):
-                valid_data = composite[valid_mask]
-                p1, p99 = np.percentile(valid_data, [1, 99])
-                
-                # Normalize and stretch for better visualization
-                composite_stretched = np.clip((composite - p1) / (p99 - p1), 0, 1)
-                elevation_like = composite_stretched * 3000  # Scale for topographic colorscale
-                
+                # Gentle normalization using percentiles
+                vmin, vmax = np.percentile(single_band[valid_mask], [5, 95])
+                norm = np.clip((single_band - vmin) / (vmax - vmin), 0, 1)
+                # Map to a lighter gray range: 0.0 -> #606060, 1.0 -> #c0c0c0
+                def norm_to_gray_hex(val):
+                    n_steps = 6  # Number of gray levels
+                    val = np.clip(val, 0, 1)
+                    val_q = round(val * (n_steps - 1)) / (n_steps - 1)
+                    gray = int(70 + val_q * (120 - 70))  # 120=#c8 (light), 70=#50 (dark)
+                    return f'#{gray:02x}{gray:02x}{gray:02x}'
                 X_masked = np.where(valid_mask, X_raster, np.nan)
                 Y_masked = np.where(valid_mask, Y_raster, np.nan)
                 Z_masked = np.where(valid_mask, Z_raster, np.nan)
-                composite_masked = np.where(valid_mask, elevation_like, np.nan)
-                
-                # Add RGB basemap surface
-                fig.add_trace(go.Surface(
-                    x=X_masked, 
-                    y=Y_masked, 
-                    z=Z_masked,
-                    surfacecolor=composite_masked,
-                    colorscale='geyser',
-                    opacity=0.9,
-                    showscale=False
-                ))
-                
+                x_coords_data = np.array(data.x)
+                y_coords_data = np.array(data.y)
+                if len(x_coords_data) > 1 and len(y_coords_data) > 1:
+                    x_res = abs(x_coords_data[1] - x_coords_data[0]) / 2
+                    y_res = abs(y_coords_data[1] - y_coords_data[0]) / 2
+                else:
+                    x_res = y_res = 0.0001
+                all_x, all_y, all_z, all_i, all_j, all_k, all_colors = [], [], [], [], [], [], []
+                for row in range(single_band.shape[0]):
+                    for col in range(single_band.shape[1]):
+                        if valid_mask[row, col]:
+                            x_center = X_masked[row, col]
+                            y_center = Y_masked[row, col]
+                            z_center = Z_masked[row, col]
+                            val = norm[row, col]
+                            hex_color = norm_to_gray_hex(val)
+                            base_idx = len(all_x)
+                            corners_x = [x_center - x_res, x_center + x_res, x_center + x_res, x_center - x_res]
+                            corners_y = [y_center - y_res, y_center - y_res, y_center + y_res, y_center + y_res]
+                            corners_z = [z_center] * 4
+                            all_x.extend(corners_x)
+                            all_y.extend(corners_y)
+                            all_z.extend(corners_z)
+                            all_i.extend([base_idx, base_idx])
+                            all_j.extend([base_idx + 1, base_idx + 2])
+                            all_k.extend([base_idx + 2, base_idx + 3])
+                            all_colors.extend([hex_color, hex_color])
+                if all_x:
+                    fig.add_trace(go.Mesh3d(
+                        x=all_x, y=all_y, z=all_z,
+                        i=all_i, j=all_j, k=all_k,
+                        facecolor=all_colors,
+                        opacity=0.9,
+                        showscale=False,
+                        showlegend=False,
+                        hovertemplate='Basemap<extra></extra>'
+                    ))
                 return True
-            
             return False
-            
         except Exception as e:
-            logger.error(f"RGB basemap creation failed: {e}")
-            return False
-
-    def create_ndvi_basemap(self, data, fig, X_raster, Y_raster, Z_raster):
-        """Create NDVI basemap with vegetation colors."""
-        try:
-            ndvi_2d = np.array(data.ndvi.isel(time=-1))
-            
-            valid_mask = ~np.isnan(ndvi_2d)
-            ndvi_masked = np.where(valid_mask, ndvi_2d, np.nan)
-            
-                
-            valid_ndvi = ndvi_2d[valid_mask]
-            if len(valid_ndvi) == 0:
-                logger.warning("No valid NDVI data found")
-                return False
-                
-            X_masked = np.where(valid_mask, X_raster, np.nan)
-            Y_masked = np.where(valid_mask, Y_raster, np.nan)
-            Z_masked = np.where(valid_mask, Z_raster, np.nan)
-            
-            # Add NDVI basemap surface
-            fig.add_trace(go.Surface(
-                x=X_masked, 
-                y=Y_masked, 
-                z=Z_masked, 
-                surfacecolor=ndvi_masked,
-                colorscale='RdYlGn',
-                cmin=-0.5,
-                cmax=1.0,
-                opacity=0.9, 
-                showscale=False
-            ))
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"NDVI basemap creation failed: {e}")
+            logger.error(f"Basemap creation failed: {e}")
             return False
 
 
 if __name__ == "__main__":
     print("Interactive Visualization for Vegetation ST-Cube Segmentation")
-    print("This module provides visualization tools for vegetation clustering results.")
+    print("This module provides 3D spatiotemporal visualization for vegetation clustering results.")
     print("Use by importing InteractiveVisualization class and calling create_all_visualizations().")
