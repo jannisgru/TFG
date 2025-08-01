@@ -19,6 +19,8 @@ from loguru import logger
 from config_loader import get_config
 from json_exporter import VegetationClusterJSONExporter
 import datetime
+from config_loader import get_section
+from spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
 
 warnings.filterwarnings('ignore')
 
@@ -292,6 +294,46 @@ class VegetationSegmenter:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         cluster_labels = kmeans.fit_predict(combined_features)
         
+        # Apply spatial bridging if enabled
+        try:
+            bridging_cfg = get_section('bridging')
+            
+            enable_bridging = bridging_cfg.get('enable_spatial_bridging', False) if bridging_cfg else False
+            
+            if enable_bridging:
+                logger.info("Applying spatial bridging...")
+                
+                # Convert coordinates to list of tuples format expected by bridging
+                pixel_coords_list = [(int(coord[0]), int(coord[1])) for coord in vegetation_coords]
+                
+                # Create bridging parameters from config
+                bridging_params = BridgingParameters(
+                    bridge_similarity_tolerance=bridging_cfg.get('bridge_similarity_tolerance', 0.1),
+                    max_bridge_gap=bridging_cfg.get('max_bridge_gap', 2),
+                    min_bridge_density=bridging_cfg.get('min_bridge_density', 0.7),
+                    connectivity_radius=bridging_cfg.get('connectivity_radius', 3),
+                    max_bridge_length=bridging_cfg.get('max_bridge_length', 20),
+                    min_cluster_size_for_bridging=bridging_cfg.get('min_cluster_size_for_bridging', 5)
+                )
+                
+                # Log initial cluster count
+                initial_clusters = len(np.unique(cluster_labels[cluster_labels >= 0]))
+                logger.info(f"Initial clusters before bridging: {initial_clusters}")
+                
+                # Apply spatial bridging
+                cluster_labels = apply_spatial_bridging_to_clusters(
+                    cluster_labels, pixel_coords_list, vegetation_pixels, bridging_params
+                )
+                
+                # Log final cluster count
+                final_clusters = len(np.unique(cluster_labels[cluster_labels >= 0]))
+                logger.info(f"Final clusters after bridging: {final_clusters} (merged {initial_clusters - final_clusters} clusters)")
+                
+        except Exception as e:
+            logger.warning(f"Spatial bridging failed: {e}, continuing without bridging")
+            import traceback
+            traceback.print_exc()
+        
         # Apply spatial constraints - filter clusters based on spatial distance
         clusters = self.apply_spatial_constraints(
             cluster_labels, vegetation_coords, vegetation_pixels
@@ -317,29 +359,71 @@ class VegetationSegmenter:
             if len(cluster_coords) < self.params.min_cube_size:
                 continue
             
-            # Check spatial coherence - remove outliers
-            if len(cluster_coords) > 1:
-                # Calculate pairwise distances
-                distances = cdist(cluster_coords, cluster_coords)
-                mean_distance = np.mean(distances[np.triu_indices_from(distances, k=1)])
-                
-                # Keep only pixels within reasonable distance from cluster centroid
-                centroid = np.mean(cluster_coords, axis=0)
-                distances_to_centroid = np.linalg.norm(cluster_coords - centroid, axis=1)
-                
-                spatial_threshold = min(self.params.max_spatial_distance, mean_distance * 1.5)
-                valid_pixels = distances_to_centroid <= spatial_threshold
-                
-                if valid_pixels.sum() >= self.params.min_cube_size:
+            # For bridged clusters, be more lenient with spatial constraints
+            # since spatial bridging already ensures connectivity through similar pixels
+            try:
+                from config_loader import get_section
+                bridging_cfg = get_section('bridging')
+                bridging_enabled = bridging_cfg.get('enable_spatial_bridging', False) if bridging_cfg else False
+            except:
+                bridging_enabled = False
+            
+            if bridging_enabled:
+                # Less aggressive spatial filtering for bridged clusters
+                # Only remove extreme outliers, not moderate distances
+                if len(cluster_coords) > 1:
+                    centroid = np.mean(cluster_coords, axis=0)
+                    distances_to_centroid = np.linalg.norm(cluster_coords - centroid, axis=1)
+                    
+                    # Use a more lenient threshold for bridged clusters
+                    spatial_threshold = self.params.max_spatial_distance * 3  # 3x more lenient
+                    valid_pixels = distances_to_centroid <= spatial_threshold
+                    
+                    if valid_pixels.sum() >= self.params.min_cube_size:
+                        clusters.append({
+                            'id': len(clusters),
+                            'coordinates': cluster_coords[valid_pixels],
+                            'ndvi_profiles': cluster_pixels[valid_pixels],
+                            'size': valid_pixels.sum(),
+                            'centroid': centroid,
+                            'mean_ndvi': np.mean(cluster_pixels[valid_pixels]),
+                            'temporal_variance': np.var(cluster_pixels[valid_pixels])
+                        })
+                else:
+                    # Single pixel cluster - keep it if it meets minimum size
                     clusters.append({
                         'id': len(clusters),
-                        'coordinates': cluster_coords[valid_pixels],
-                        'ndvi_profiles': cluster_pixels[valid_pixels],
-                        'size': valid_pixels.sum(),
-                        'centroid': centroid,
-                        'mean_ndvi': np.mean(cluster_pixels[valid_pixels]),
-                        'temporal_variance': np.var(cluster_pixels[valid_pixels])
+                        'coordinates': cluster_coords,
+                        'ndvi_profiles': cluster_pixels,
+                        'size': len(cluster_coords),
+                        'centroid': cluster_coords[0] if len(cluster_coords) > 0 else [0, 0],
+                        'mean_ndvi': np.mean(cluster_pixels),
+                        'temporal_variance': np.var(cluster_pixels)
                     })
+            else:
+                # Original strict spatial filtering for non-bridged clusters
+                if len(cluster_coords) > 1:
+                    # Calculate pairwise distances
+                    distances = cdist(cluster_coords, cluster_coords)
+                    mean_distance = np.mean(distances[np.triu_indices_from(distances, k=1)])
+                    
+                    # Keep only pixels within reasonable distance from cluster centroid
+                    centroid = np.mean(cluster_coords, axis=0)
+                    distances_to_centroid = np.linalg.norm(cluster_coords - centroid, axis=1)
+                    
+                    spatial_threshold = min(self.params.max_spatial_distance, mean_distance * 1.5)
+                    valid_pixels = distances_to_centroid <= spatial_threshold
+                    
+                    if valid_pixels.sum() >= self.params.min_cube_size:
+                        clusters.append({
+                            'id': len(clusters),
+                            'coordinates': cluster_coords[valid_pixels],
+                            'ndvi_profiles': cluster_pixels[valid_pixels],
+                            'size': valid_pixels.sum(),
+                            'centroid': centroid,
+                            'mean_ndvi': np.mean(cluster_pixels[valid_pixels]),
+                            'temporal_variance': np.var(cluster_pixels[valid_pixels])
+                        })
         
         return clusters
     

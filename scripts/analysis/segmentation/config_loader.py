@@ -34,6 +34,15 @@ class SegmentationConfig:
     min_samples_ratio: float = 0.01
     spatial_weight: float = 0.2
     
+    # Spatial bridging parameters
+    enable_spatial_bridging: bool = True
+    bridge_similarity_tolerance: float = 0.1
+    max_bridge_gap: int = 2
+    min_bridge_density: float = 0.7
+    connectivity_radius: int = 3
+    max_bridge_length: int = 20
+    min_cluster_size_for_bridging: int = 5
+    
     # Spatial parameters
     spatial_margin: int = 1
     temporal_margin: int = 0

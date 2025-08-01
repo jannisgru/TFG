@@ -39,6 +39,7 @@ from .config_loader import get_config, get_parameter, reload_config
 from .interactive_visualization import InteractiveVisualization
 from .static_visualization import StaticVisualization
 from .json_exporter import VegetationClusterJSONExporter
+from .spatial_bridging import SpatialBridging, BridgingParameters, apply_spatial_bridging_to_clusters
 
 __all__ = [
     # Main API
@@ -48,6 +49,11 @@ __all__ = [
     'VegetationSegmentationParameters',
     'STCube',
     'VegetationNDVIClusteringInitializer',
+    
+    # Spatial bridging
+    'SpatialBridging',
+    'BridgingParameters', 
+    'apply_spatial_bridging_to_clusters',
     
     # Export functionality
     'VegetationClusterJSONExporter',
