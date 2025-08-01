@@ -18,6 +18,7 @@ import logging
 from loguru import logger
 from config_loader import get_config
 from json_exporter import VegetationClusterJSONExporter
+import datetime
 
 warnings.filterwarnings('ignore')
 
@@ -68,7 +69,10 @@ class VegetationSegmenter:
         Returns:
             List of vegetation cluster dictionaries with spatial and temporal info
         """
-        
+        # Add datetime subfolder inside the given output directory
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = str(Path(output_dir) / timestamp)
+
         logger.info(f"Data: {netcdf_path}")
         logger.info(f"Municipality: {municipality_name}")
         

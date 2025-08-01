@@ -334,7 +334,7 @@ class VegetationClusterJSONExporter:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        json_filename = f"vegetation_clusters_{municipality_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        json_filename = f"vegetation_clusters_{municipality_name.replace(' ', '_')}.json"
         json_filepath = output_path / json_filename
         
         try:
