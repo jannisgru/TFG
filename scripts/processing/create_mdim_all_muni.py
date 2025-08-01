@@ -12,10 +12,12 @@ NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation',
 BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_2012_2022.nc"
-START_YEAR = 2000   # Set to None to use config file value
+OUTPUT_FILE_NAME = "mdim_Sant_Marti.nc"
+START_YEAR = None   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
-YEAR_STEP = 2       # Set to None to use config file value
+YEAR_STEP = None       # Set to None to use config file value
+# Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
+FILTER_MUNICIPALITY = "Sant Martí"  # e.g. "L'Eixample" or None
 # ================================
 
 import warnings
@@ -113,33 +115,39 @@ def load_and_clip_landsat_file(file_path, year, boundaries_gdf):
         # Clip to boundaries
         out_image, out_transform = mask(src, boundaries_gdf.geometry, crop=True)
         
-        # Create coordinates
+        # Create coordinates - use float32 for consistency
         height, width = out_image.shape[1], out_image.shape[2]
-        x_coords = np.linspace(out_transform[2], out_transform[2] + width*out_transform[0], width)
-        y_coords = np.linspace(out_transform[5], out_transform[5] + height*out_transform[4], height)
+        x_coords = np.linspace(out_transform[2], out_transform[2] + width*out_transform[0], width, dtype=np.float32)
+        y_coords = np.linspace(out_transform[5], out_transform[5] + height*out_transform[4], height, dtype=np.float32)
         
-        # Create dataset
-        data_vars = {band: (['y', 'x'], out_image[i]) for i, band in enumerate(BAND_NAMES)}
+        # Handle NoData values properly - convert -9999 to NaN
+        landsat_data = out_image.astype(np.float32)
+        landsat_data[landsat_data == -9999] = np.nan
         
+        # Create dataset with landsat structure
         ds = xr.Dataset(
-            data_vars,
+            {
+                'landsat': (['band', 'y', 'x'], landsat_data)
+            },
             coords={
                 'x': x_coords,
                 'y': y_coords,
-                'time': pd.to_datetime(f'{year}-07-01')
+                'time': year,  # Use simple integer year instead of datetime
+                'band': BAND_NAMES  # ['BLUE', 'GREEN', 'RED', 'NIR']
             }
         )
         
-        # Add municipality masks
-        municipality_ids, municipality_names = create_municipality_masks(
-            src, boundaries_gdf, out_transform, height, width
-        )
-        
-        ds['municipality_id'] = (['y', 'x'], municipality_ids)
-        ds.attrs.update({
-            'municipality_names': municipality_names,
-            'n_municipalities': len(municipality_names)
-        })
+        # Add municipality masks (only if processing multiple municipalities)
+        if FILTER_MUNICIPALITY is None:
+            municipality_ids, municipality_names = create_municipality_masks(
+                src, boundaries_gdf, out_transform, height, width
+            )
+            
+            ds['municipality_id'] = (['y', 'x'], municipality_ids)
+            ds.attrs.update({
+                'municipality_names': municipality_names,
+                'n_municipalities': len(municipality_names)
+            })
         
         return ds
 
@@ -148,23 +156,29 @@ def calculate_ndvi(combined_ds):
     """Calculate NDVI with proper NoData handling."""
     logger.info("Calculating NDVI...")
     
-    red = combined_ds['RED'].where(combined_ds['RED'] != -9999)
-    nir = combined_ds['NIR'].where(combined_ds['NIR'] != -9999)
+    # Extract RED and NIR from the landsat variable using band selection
+    red = combined_ds['landsat'].sel(band='RED')
+    nir = combined_ds['landsat'].sel(band='NIR')
     
-    # logger.info(f"RED: Min={float(red.min()):.3f}, Max={float(red.max()):.3f}, Mean={float(red.mean()):.3f}")
-    # logger.info(f"NIR: Min={float(nir.min()):.3f}, Max={float(nir.max()):.3f}, Mean={float(nir.mean()):.3f}")
+    # Calculate NDVI only where both RED and NIR are valid
+    denominator = (nir + red)
+    # Avoid division by zero and handle NaN properly
+    ndvi = xr.where(
+        np.abs(denominator) > 0.001,
+        (nir - red) / denominator,
+        np.nan
+    )
     
-    # Calculate NDVI
-    denominator = (nir + red).where(lambda x: np.abs(x) > 0.001)
-    ndvi = ((nir - red) / denominator).clip(-1.0, 1.0)
+    # Clip to valid NDVI range
+    ndvi = ndvi.clip(-1.0, 1.0)
     
     # Log statistics
-    valid_count = int(ndvi.count())
-    total_count = int(ndvi.size)
-    coverage_percent = (valid_count / total_count) * 100
-    
-    logger.info(f"NDVI: Min={float(ndvi.min()):.3f}, Max={float(ndvi.max()):.3f}, Mean={float(ndvi.mean()):.3f}")
-    # logger.info(f"Valid pixels: {valid_count:,}/{total_count:,} ({coverage_percent:.1f}%)")
+    valid_ndvi = ndvi.values[~np.isnan(ndvi.values)]
+    if len(valid_ndvi) > 0:
+        logger.info(f"NDVI: Min={valid_ndvi.min():.3f}, Max={valid_ndvi.max():.3f}, Mean={valid_ndvi.mean():.3f}")
+        logger.info(f"Valid NDVI pixels: {len(valid_ndvi):,}/{ndvi.size:,} ({100*len(valid_ndvi)/ndvi.size:.1f}%)")
+    else:
+        logger.warning("No valid NDVI values calculated!")
     
     return ndvi.astype('float32')
 
@@ -213,7 +227,11 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
 
     # Load municipalities
     boundaries_gdf = load_municipalities(boundaries_path)
-    logger.info(f"Processing {len(boundaries_gdf)} municipalities")
+    if FILTER_MUNICIPALITY is not None:
+        boundaries_gdf = boundaries_gdf[boundaries_gdf['municipality_name'] == FILTER_MUNICIPALITY]
+        logger.info(f"Filtered to municipality: {FILTER_MUNICIPALITY} ({len(boundaries_gdf)} found)")
+    else:
+        logger.info(f"Processing {len(boundaries_gdf)} municipalities")
     
     # Find available files
     available_files = []
@@ -236,9 +254,8 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     for file_path, year in tqdm(zip(available_files, available_years), total=len(available_files), desc="Processing files"):
         try:
             ds = load_and_clip_landsat_file(file_path, year, boundaries_gdf)
-            for band in BAND_NAMES:
-                if band in ds:
-                    ds[band] = ds[band].astype(OUTPUT_DTYPE)
+            # Convert landsat data to desired output type
+            ds['landsat'] = ds['landsat'].astype(OUTPUT_DTYPE)
             datasets.append(ds)
         except Exception as e:
             logger.warning(f"Failed to process {file_path}: {e}")
@@ -250,60 +267,110 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     logger.info("Combining datasets...")
     combined_ds = xr.concat(datasets, dim='time').sortby('time')
     
-    # Calculate NDVI and classification
+    # Ensure time coordinate is int64 (simple years) to match target structure
+    combined_ds = combined_ds.assign_coords(time=np.array(available_years, dtype=np.int64))
+    
+    # Calculate NDVI 
     ndvi = calculate_ndvi(combined_ds)
     combined_ds['ndvi'] = (['time', 'y', 'x'], ndvi.data)
-    ndvi_class = classify_ndvi(combined_ds['ndvi'])
-    combined_ds['ndvi_class'] = (['time', 'y', 'x'], ndvi_class.data)
+    
+    # Only add classification if processing multiple municipalities
+    if FILTER_MUNICIPALITY is None:
+        ndvi_class = classify_ndvi(combined_ds['ndvi'])
+        combined_ds['ndvi_class'] = (['time', 'y', 'x'], ndvi_class.data)
     
     # Add attributes
+    combined_ds['landsat'].attrs = {
+        'long_name': 'Landsat Collection 2 Level 2 Surface Reflectance',
+        'units': 'dimensionless',
+        'description': 'Surface reflectance values for BLUE, GREEN, RED, NIR bands',
+        'bands': ', '.join(BAND_NAMES),
+        'source': 'Google Earth Engine Landsat Collection 2 Level 2'
+    }
     combined_ds['ndvi'].attrs = {
         'long_name': 'Normalized Difference Vegetation Index',
         'units': 'dimensionless',
-        'valid_range': [-1, 1],
-        'description': 'Calculated from Landsat Collection 2 Level 2 data'
+        'valid_range': np.array([-1.0, 1.0], dtype=np.float32),
+        'description': 'NDVI calculated from NIR and RED bands: (NIR - RED) / (NIR + RED)'
     }
-    combined_ds['ndvi_class'].attrs = {
-        'long_name': 'NDVI Classification Categories',
-        'units': 'class',
-        'valid_range': [0, 5],
-        'description': 'NDVI classified into 6 vegetation categories',
-        'classification_scheme': 'Class 0: -1 to 0 (Water/Bare/Built-up), Class 1: 0 to 0.1 (Very sparse vegetation), Class 2: 0.1 to 0.2 (Sparse vegetation), Class 3: 0.2 to 0.4 (Moderate vegetation), Class 4: 0.4 to 0.6 (Dense vegetation), Class 5: 0.6 to 1 (Very dense vegetation)',
-        'nodata_value': -1
-    }
+    
+    if 'ndvi_class' in combined_ds:
+        combined_ds['ndvi_class'].attrs = {
+            'long_name': 'NDVI Classification Categories',
+            'units': 'class',
+            'valid_range': [0, 5],
+            'description': 'NDVI classified into 6 vegetation categories',
+            'classification_scheme': 'Class 0: -1 to 0 (Water/Bare/Built-up), Class 1: 0 to 0.1 (Very sparse vegetation), Class 2: 0.1 to 0.2 (Sparse vegetation), Class 3: 0.2 to 0.4 (Moderate vegetation), Class 4: 0.4 to 0.6 (Dense vegetation), Class 5: 0.6 to 1 (Very dense vegetation)',
+            'nodata_value': -1
+        }
     combined_ds.attrs.update({
-        'title': 'AMB Landsat Time Series - All Municipalities',
-        'description': f'Landsat Collection 2 Level 2 data for all {len(boundaries_gdf)} AMB municipalities ({min(available_years)}-{max(available_years)})',
+        'title': f'AMB Landsat Time Series - {FILTER_MUNICIPALITY or "All Municipalities"}',
+        'description': f'Landsat Collection 2 Level 2 data for {FILTER_MUNICIPALITY or f"all {len(boundaries_gdf)} AMB municipalities"} ({min(available_years)}-{max(available_years)})',
         'source': 'Google Earth Engine',
         'processing_level': 'Collection 2 Level 2',
         'spatial_resolution': '30m',
         'projection': 'EPSG:4326',
         'total_municipalities': len(boundaries_gdf),
-        'municipality_names': ', '.join(boundaries_gdf['municipality_name'].tolist()),
+        'municipality_names': FILTER_MUNICIPALITY or ', '.join(boundaries_gdf['municipality_name'].tolist()),
         'n_years': len(available_years),
         'bands': ', '.join(BAND_NAMES),
-        'derived_variables': 'NDVI, NDVI_CLASS',
+        'derived_variables': 'NDVI' + (', NDVI_CLASS' if 'ndvi_class' in combined_ds else ''),
         'created_date': datetime.now().isoformat(),
-        'individual_analysis_supported': 'true'
+        'individual_analysis_supported': 'true',
+        'nodata_handling': 'NaN for invalid values'
     })
+    
+    # Determine output filename
+    if FILTER_MUNICIPALITY is not None:
+        # Use consistent naming pattern to match target structure
+        clean_name = FILTER_MUNICIPALITY.replace(' ', '_').replace("'", "")
+        output_file_name = f"landsat_multidimensional_{clean_name}.nc"
+    else:
+        output_file_name = OUTPUT_FILE_NAME
     
     # Save dataset
     processed_data_path.mkdir(parents=True, exist_ok=True)
-    output_file = processed_data_path / OUTPUT_FILE_NAME
+    output_file = processed_data_path / output_file_name
 
-    encoding = {var: {'zlib': True, 'complevel': 1} for var in BAND_NAMES + ['ndvi', 'ndvi_class', 'municipality_id']}
+    # Set encoding to ensure proper data types matching target structure
+    encoding = {
+        'landsat': {'dtype': 'float32', 'zlib': True, 'complevel': 6},
+        'ndvi': {'dtype': 'float32', 'zlib': True, 'complevel': 6},
+        'time': {'dtype': 'int64'},
+        'x': {'dtype': 'float32'},
+        'y': {'dtype': 'float32'}
+    }
+    
+    if 'ndvi_class' in combined_ds:
+        encoding['ndvi_class'] = {'dtype': 'int8', 'zlib': True, 'complevel': 6}
+    if 'municipality_id' in combined_ds:
+        encoding['municipality_id'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}
+    
     combined_ds.to_netcdf(output_file, engine='netcdf4', encoding=encoding)
     
-    # Save municipality mapping
-    municipality_info = boundaries_gdf['municipality_name'].copy()
-    municipality_info['municipality_id'] = range(1, len(municipality_info) + 1)
-    municipality_info_file = processed_data_path / "municipality_mapping.csv"
-    municipality_info.to_csv(municipality_info_file, index=False, encoding='utf-8')
+    # Save municipality mapping (only if processing multiple municipalities)
+    if FILTER_MUNICIPALITY is None and 'municipality_id' in combined_ds:
+        municipality_info = boundaries_gdf['municipality_name'].copy()
+        municipality_info['municipality_id'] = range(1, len(municipality_info) + 1)
+        municipality_info_file = processed_data_path / "municipality_mapping.csv"
+        municipality_info.to_csv(municipality_info_file, index=False, encoding='utf-8')
+        logger.info(f"Municipality mapping saved to: {municipality_info_file}")
 
     logger.success("Dataset creation complete!")
-    logger.info(f"Municipality mapping saved to: {municipality_info_file}")
-
-    return combined_ds, municipality_info
+    logger.info(f"Output file: {output_file}")
+    logger.info(f"Dataset dimensions: {combined_ds.dims}")
+    logger.info(f"Variables: {list(combined_ds.data_vars.keys())}")
+    
+    # Log data coverage statistics
+    landsat_valid = np.sum(~np.isnan(combined_ds['landsat'].values))
+    landsat_total = combined_ds['landsat'].size
+    ndvi_valid = np.sum(~np.isnan(combined_ds['ndvi'].values))
+    ndvi_total = combined_ds['ndvi'].size
+    
+    logger.info(f"Landsat valid data: {landsat_valid:,}/{landsat_total:,} ({100*landsat_valid/landsat_total:.1f}%)")
+    logger.info(f"NDVI valid data: {ndvi_valid:,}/{ndvi_total:,} ({100*ndvi_valid/ndvi_total:.1f}%)")
+    
+    return output_file
 
 
 if __name__ == "__main__":
