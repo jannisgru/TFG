@@ -6,14 +6,6 @@ This script creates static visualizations using Matplotlib for
 vegetation-focused ST-cube segmentation results.
 """
 
-# ==== CONFIGURABLE PARAMETERS ====
-DEFAULT_OUTPUT_DIRECTORY = "outputs/static_vegetation"    # Default output directory
-DEFAULT_FIGURE_SIZE = (18, 12)                           # Default figure size
-DEFAULT_DPI = 300                                        # Default DPI for saved figures
-DEFAULT_COLOR_MAP = "Set3"                               # Default colormap
-DEFAULT_GRID_ALPHA = 0.3                                # Default grid transparency
-# ================================
-
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -21,6 +13,7 @@ from typing import List, Dict, Any, Tuple
 import pandas as pd
 import warnings
 from loguru import logger
+from config_loader import get_config
 
 warnings.filterwarnings('ignore')
 
@@ -33,11 +26,14 @@ class StaticVisualization:
     Static visualization generator for vegetation ST-cube segmentation results.
     """
     
-    def __init__(self, output_directory: str = DEFAULT_OUTPUT_DIRECTORY):
+    def __init__(self, output_directory: str = None):
         """Initialize the static visualization generator."""
+        if output_directory is None:
+            output_directory = get_config().static_output_dir
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.colors = plt.cm.Set3(np.linspace(0, 1, 12))
+        config = get_config()
+        self.colors = plt.cm.get_cmap(config.color_map)(np.linspace(0, 1, 12))
     
     def _get_pixels_safely(self, cube: Dict) -> List[Tuple[int, int]]:
         """Safely extract pixels from cube data, handling different formats."""
@@ -121,7 +117,8 @@ class StaticVisualization:
     def create_comprehensive_summary(self, cubes: List[Dict], filename: str, municipality_name: str):
         """Create a comprehensive summary plot with multiple panels."""
         
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        config = get_config()
+        fig, axes = plt.subplots(2, 3, figsize=config.figure_size)
         fig.suptitle(f'Vegetation Clustering Analysis - {municipality_name}', fontsize=16, fontweight='bold')
         
         # Panel 1: Cluster size distribution
@@ -130,7 +127,7 @@ class StaticVisualization:
         axes[0, 0].set_xlabel('Cluster Size (pixels)')
         axes[0, 0].set_ylabel('Frequency')
         axes[0, 0].set_title('Cluster Size Distribution')
-        axes[0, 0].grid(True, alpha=0.3)
+        axes[0, 0].grid(True, alpha=config.grid_alpha)
         
         # Panel 2: NDVI distribution
         ndvis = [cube['mean_ndvi'] for cube in cubes if not np.isnan(cube['mean_ndvi'])]
@@ -138,7 +135,7 @@ class StaticVisualization:
         axes[0, 1].set_xlabel('Mean NDVI')
         axes[0, 1].set_ylabel('Frequency')
         axes[0, 1].set_title('NDVI Distribution')
-        axes[0, 1].grid(True, alpha=0.3)
+        axes[0, 1].grid(True, alpha=config.grid_alpha)
         
         # Panel 3: Vegetation type pie chart
         veg_types = [cube.get('vegetation_type', 'Unknown') for cube in cubes]
@@ -204,7 +201,7 @@ Highest NDVI: {max(cubes, key=lambda x: x['mean_ndvi'])['mean_ndvi']:.3f}"""
         
         # Save the plot
         output_file = self.output_dir / filename
-        plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
+        plt.savefig(output_file, dpi=config.dpi, bbox_inches=config.bbox_inches, facecolor='white')
         plt.close()
         
         print(f"Comprehensive summary saved to: {output_file}")

@@ -5,16 +5,6 @@ This script provides vegetation-specific NDVI clustering segmentation
 with local spatial constraints for analyzing vegetation patterns.
 """
 
-# ==== CONFIGURABLE PARAMETERS ====
-DEFAULT_MAX_SPATIAL_DISTANCE = 10          # Maximum spatial distance for clustering
-DEFAULT_MIN_VEGETATION_NDVI = 0.4           # Minimum NDVI for vegetation
-DEFAULT_MIN_CUBE_SIZE = 20                  # Minimum pixels per cube
-DEFAULT_NDVI_VARIANCE_THRESHOLD = 0.01      # Filter out static areas
-DEFAULT_CHUNK_SIZE = 1000                   # For memory-efficient processing
-DEFAULT_N_CLUSTERS = 10                     # Number of temporal clusters
-DEFAULT_TEMPORAL_WEIGHT = 0.7               # Weight for temporal vs spatial similarity
-# ================================
-
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -26,19 +16,39 @@ from tqdm import tqdm
 import gc
 import logging
 from loguru import logger
+from config_loader import get_config
 
 warnings.filterwarnings('ignore')
 
 @dataclass
 class VegetationSegmentationParameters:
     """Parameters for vegetation segmentation."""
-    max_spatial_distance: int = DEFAULT_MAX_SPATIAL_DISTANCE
-    min_vegetation_ndvi: float = DEFAULT_MIN_VEGETATION_NDVI
-    min_cube_size: int = DEFAULT_MIN_CUBE_SIZE
-    ndvi_variance_threshold: float = DEFAULT_NDVI_VARIANCE_THRESHOLD  # Filter out static areas
-    chunk_size: int = DEFAULT_CHUNK_SIZE  # For memory-efficient processing
-    n_clusters: int = DEFAULT_N_CLUSTERS  # Number of temporal clusters
-    temporal_weight: float = DEFAULT_TEMPORAL_WEIGHT  # Weight for temporal vs spatial similarity
+    max_spatial_distance: int = None
+    min_vegetation_ndvi: float = None
+    min_cube_size: int = None
+    ndvi_variance_threshold: float = None
+    chunk_size: int = None
+    n_clusters: int = None
+    temporal_weight: float = None
+    
+    def __post_init__(self):
+        # Load config and set defaults if not provided
+        config = get_config()
+        
+        if self.max_spatial_distance is None:
+            self.max_spatial_distance = config.max_spatial_distance
+        if self.min_vegetation_ndvi is None:
+            self.min_vegetation_ndvi = config.min_vegetation_ndvi
+        if self.min_cube_size is None:
+            self.min_cube_size = config.min_cube_size
+        if self.ndvi_variance_threshold is None:
+            self.ndvi_variance_threshold = config.ndvi_variance_threshold
+        if self.chunk_size is None:
+            self.chunk_size = config.chunk_size
+        if self.n_clusters is None:
+            self.n_clusters = config.n_clusters
+        if self.temporal_weight is None:
+            self.temporal_weight = config.temporal_weight
 
 
 class VegetationSegmenter:
@@ -49,7 +59,7 @@ class VegetationSegmenter:
         self.logger = logging.getLogger(__name__)
     
     def segment_vegetation(self, netcdf_path: str, 
-                          municipality_name: str = "Sant Martí",
+                          municipality_name,
                           create_visualizations: bool = True,
                           output_dir: str = "outputs/vegetation_clustering") -> List[Dict[str, Any]]:
         """
@@ -507,14 +517,23 @@ class VegetationSegmenter:
         self.logger.info(f"Summary plots saved to: {output_file}")
 
 
-def segment_vegetation(netcdf_path: str, 
+def segment_vegetation(netcdf_path: str = None, 
                                parameters: Optional[VegetationSegmentationParameters] = None,
-                               municipality_name: str = "Sant Martí",
+                               municipality_name: str = None,
                                create_visualizations: bool = True,
-                               output_dir: str = "outputs/vegetation_clustering") -> List[Dict]:
+                               output_dir: str = None) -> List[Dict]:
     """
     Vegetation segmentation function with improved performance and memory usage.
     """
+    config = get_config()
+    
+    # Use config defaults if not provided
+    if netcdf_path is None:
+        netcdf_path = config.default_netcdf_path
+    if municipality_name is None:
+        municipality_name = config.default_municipality
+    if output_dir is None:
+        output_dir = config.default_output_dir
     
     if parameters is None:
         parameters = VegetationSegmentationParameters()
@@ -535,26 +554,15 @@ if __name__ == "__main__":
     # Test the version
     logger.info("Testing vegetation segmentation...")
     
-    data_path = "D:/Uni/TFG/data/processed/landsat_multidimensional_Sant_Marti_Ciutat_Vella.nc"
-    municipality = "Sant Martí"
+    config = get_config()
     
-    # Create parameters
-    params = VegetationSegmentationParameters(
-        max_spatial_distance=20,
-        min_vegetation_ndvi=0.4,
-        min_cube_size=10,
-        ndvi_variance_threshold=0.015,
-        n_clusters=10,
-        temporal_weight=0.8
-    )
+    # Use config defaults (no parameter overrides) to respect YAML configuration
+    params = VegetationSegmentationParameters()  # Uses all config defaults
     
-    # Run segmentation
+    # Run segmentation using config defaults for paths and municipality
     vegetation_cubes = segment_vegetation(
-        netcdf_path=data_path,
         parameters=params,
-        municipality_name=municipality,
-        create_visualizations=True,
-        output_dir="outputs/vegetation_clustering"
+        create_visualizations=True
     )
     
     logger.success(f"Completed! Found {len(vegetation_cubes)} vegetation clusters.")

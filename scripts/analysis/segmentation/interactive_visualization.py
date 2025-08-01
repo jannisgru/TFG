@@ -1,39 +1,27 @@
 #!/usr/bin/env python3
 """Interactive HTML Plotly Visualization for Vegetation ST-Cube Segmentation Results"""
 
-# ==== CONFIGURABLE PARAMETERS ====
-OUTPUT_DIRECTORY = "outputs/interactive_vegetation"
-FIGURE_WIDTH = 1400
-FIGURE_HEIGHT = 900
-# ================================
-
 import numpy as np
 import xarray as xr
 import plotly.graph_objects as go
 import plotly.offline as pyo
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
-import warnings
 from loguru import logger
+import warnings
+from config_loader import get_config
+from cube import STCube
 
 warnings.filterwarnings('ignore')
-
-import sys
-import os
-scripts_dir = Path(__file__).parent.parent.parent
-sys.path.append(str(scripts_dir))
-
-try:
-    from .cube import STCube
-except ImportError:
-    from cube import STCube
 
 
 class InteractiveVisualization:
     """Interactive HTML visualization generator for vegetation ST-cube segmentation results."""
     
-    def __init__(self, output_directory: str = OUTPUT_DIRECTORY):
+    def __init__(self, output_directory: str = None):
         """Initialize the visualization generator."""
+        if output_directory is None:
+            output_directory = get_config().interactive_output_dir
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Visualization generator initialized - Output: {self.output_dir}")
@@ -258,18 +246,19 @@ class InteractiveVisualization:
                         ))
 
         # Update layout
+        config = get_config()
         fig.update_layout(
             title=f'{title} - {len(valid_cubes)} Vegetation Clusters',
             scene=dict(
                 xaxis_title='Longitude', 
                 yaxis_title='Latitude', 
                 zaxis_title='Year',
-                camera=dict(eye=dict(x=1.5, y=1.5, z=1.2)),
+                camera=dict(eye=dict(x=config.camera_x, y=config.camera_y, z=config.camera_z)),
                 aspectmode='manual', 
-                aspectratio=dict(x=1, y=1, z=0.05)
+                aspectratio=dict(x=config.aspect_x, y=config.aspect_y, z=config.aspect_z)
             ),
-            width=1400, 
-            height=900
+            width=config.figure_width, 
+            height=config.figure_height
         )
 
         # Save visualization

@@ -5,19 +5,10 @@ This module defines the essential parameters for NDVI-based
 spatiotemporal cube segmentation focusing on vegetation areas.
 """
 
-# ==== CONFIGURABLE PARAMETERS ====
-DEFAULT_SH_THRESHOLD = 0.06          # Spatial heterogeneity threshold
-DEFAULT_TH_THRESHOLD = 0.03          # Temporal heterogeneity threshold
-DEFAULT_W_COMPACTNESS = 0.5          # Weight for compactness
-DEFAULT_MIN_CUBE_SIZE = 20           # Minimum pixels per cube
-DEFAULT_MAX_ITERATIONS = 20          # Maximum merge iterations
-DEFAULT_MAX_SPATIAL_DISTANCE = 10    # Maximum spatial distance for clustering
-DEFAULT_MIN_VEGETATION_NDVI = 0.4    # Minimum NDVI for vegetation
-DEFAULT_N_CLUSTERS = None            # Maximum number of clusters to analyze (None = unlimited)
-# ================================
-
 from dataclasses import dataclass
+from typing import Optional
 import warnings
+from config_loader import get_config
 
 warnings.filterwarnings('ignore')
 
@@ -25,20 +16,33 @@ warnings.filterwarnings('ignore')
 @dataclass
 class VegetationSegmentationParameters:
     """Parameters for vegetation-focused ST-Cube segmentation"""
-    sh_threshold: float = DEFAULT_SH_THRESHOLD          # Spatial heterogeneity threshold
-    th_threshold: float = DEFAULT_TH_THRESHOLD          # Temporal heterogeneity threshold
-    w_compactness: float = DEFAULT_W_COMPACTNESS        # Weight for compactness
-    min_cube_size: int = DEFAULT_MIN_CUBE_SIZE          # Minimum pixels per cube
-    max_iterations: int = DEFAULT_MAX_ITERATIONS        # Maximum merge iterations
-    max_spatial_distance: int = DEFAULT_MAX_SPATIAL_DISTANCE  # Maximum spatial distance for clustering
-    min_vegetation_ndvi: float = DEFAULT_MIN_VEGETATION_NDVI  # Minimum NDVI for vegetation
-    n_clusters: int = DEFAULT_N_CLUSTERS                # Maximum number of clusters to analyze (None = unlimited)
+    min_cube_size: int = None
+    max_spatial_distance: int = None
+    min_vegetation_ndvi: float = None
+    n_clusters: Optional[int] = None
+    ndvi_variance_threshold: float = None
+    temporal_weight: float = None
     
     def __post_init__(self):
+        # Load config and set defaults if not provided
+        config = get_config()
+        
+        if self.min_cube_size is None:
+            self.min_cube_size = config.min_cube_size
+        if self.max_spatial_distance is None:
+            self.max_spatial_distance = config.max_spatial_distance
+        if self.min_vegetation_ndvi is None:
+            self.min_vegetation_ndvi = config.min_vegetation_ndvi
+        if self.n_clusters is None:
+            self.n_clusters = config.n_clusters
+        if self.ndvi_variance_threshold is None:
+            self.ndvi_variance_threshold = config.ndvi_variance_threshold
+        if self.temporal_weight is None:
+            self.temporal_weight = config.temporal_weight
+            
+        # Validation
         if self.min_cube_size < 1:
             self.min_cube_size = 1
-        if self.max_iterations < 1:
-            self.max_iterations = 1
         if self.max_spatial_distance < 1:
             self.max_spatial_distance = 1
         if self.min_vegetation_ndvi < 0:

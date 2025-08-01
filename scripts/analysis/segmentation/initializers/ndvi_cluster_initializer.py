@@ -9,14 +9,6 @@ Key optimizations:
 5. Better error handling and logging
 """
 
-# ==== CONFIGURABLE PARAMETERS ====
-DEFAULT_MAX_PIXELS_FOR_SAMPLING = 50000    # Maximum pixels to sample for clustering
-DEFAULT_SEARCH_RADIUS = 15                 # Search radius for spatial neighbors
-DEFAULT_MIN_CLUSTER_CONNECTIVITY = 0.8     # Minimum connectivity for valid clusters
-DEFAULT_EPS_SEARCH_ATTEMPTS = 5            # Maximum attempts to find optimal eps
-DEFAULT_MIN_SAMPLES_RATIO = 0.01           # Minimum samples as ratio of total pixels
-# ================================
-
 import numpy as np
 import xarray as xr
 from typing import List, Tuple, Optional
@@ -27,6 +19,7 @@ from loguru import logger
 import warnings
 from ..base import VegetationSegmentationParameters
 from ..cube import STCube
+from ..config_loader import get_config
 
 warnings.filterwarnings('ignore')
 
@@ -145,11 +138,12 @@ class VegetationNDVIClusteringInitializer:
     def _get_pixel_sample_indices(self, n_pixels: int) -> np.ndarray:
         """Determine which pixels to sample for processing efficiency"""
         target_clusters = self.parameters.n_clusters
+        config = get_config()
         
         # For small target clusters on large datasets, limit processing
         if (target_clusters is not None and 
             target_clusters <= 20 and 
-            n_pixels > 50000):
+            n_pixels > config.max_pixels_for_sampling):
             
             # Aim for ~200-500 pixels per target cluster, but cap at reasonable limits
             max_pixels = min(n_pixels, max(target_clusters * 300, 10000))
@@ -204,8 +198,9 @@ class VegetationNDVIClusteringInitializer:
         spatial_scaled = spatial_coords / self.parameters.max_spatial_distance
         
         # Combine features with appropriate weighting
-        # Reduce spatial weight to give more importance to temporal patterns
-        spatial_weight = 0.2  # Reduced from 0.3
+        # Use spatial weight from config
+        config = get_config()
+        spatial_weight = config.spatial_weight
         
         combined_features = np.hstack([
             ndvi_scaled,

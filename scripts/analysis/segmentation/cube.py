@@ -5,13 +5,6 @@ This module defines the core STCube class that represents a spatiotemporal cube
 in the segmentation algorithm.
 """
 
-# ==== CONFIGURABLE PARAMETERS ====
-DEFAULT_SPATIAL_MARGIN = 1          # Default spatial margin for overlap checks
-DEFAULT_TEMPORAL_MARGIN = 0         # Default temporal margin for overlap checks
-DEFAULT_MAX_NEIGHBORS = 10          # Default maximum neighbors for spatial queries
-DEFAULT_SEARCH_MARGIN = 3           # Default margin for spatial neighbor search
-# ================================
-
 import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Set
@@ -19,6 +12,7 @@ from collections import defaultdict
 import rtree.index  # For spatial indexing - install with: pip install rtree
 from loguru import logger
 import warnings
+from config_loader import get_config
 
 warnings.filterwarnings('ignore')
 
@@ -89,10 +83,13 @@ class STCube:
         bbox = self.spatial_extent
         return bbox if bbox else (0, 0, 0, 0)
     
-    def overlaps_spatially(self, other: 'STCube', margin: int = 1) -> bool:
+    def overlaps_spatially(self, other: 'STCube', margin: int = None) -> bool:
         """
         Check if this cube spatially overlaps with another cube using bounding boxes.
         """
+        if margin is None:
+            margin = get_config().spatial_margin
+            
         bbox1 = self.get_bounding_box()
         bbox2 = other.get_bounding_box()
         
@@ -116,8 +113,11 @@ class STCube:
         """Check for exact pixel overlap (more expensive but precise)"""
         return bool(self.pixels.intersection(other.pixels))
     
-    def overlaps_temporally(self, other: 'STCube', margin: int = 0) -> bool:
+    def overlaps_temporally(self, other: 'STCube', margin: int = None) -> bool:
         """Check if this cube temporally overlaps with another cube."""
+        if margin is None:
+            margin = get_config().temporal_margin
+            
         start1, end1 = self.temporal_extent
         start2, end2 = other.temporal_extent
         
@@ -244,11 +244,15 @@ class CubeCollection:
         """Get cube by ID"""
         return self._cube_dict.get(cube_id)
     
-    def get_spatial_neighbors(self, cube: STCube, max_neighbors: int = 10, 
-                            margin: int = 3) -> List[STCube]:
+    def get_spatial_neighbors(self, cube: STCube, max_neighbors: int = None, 
+                            margin: int = None) -> List[STCube]:
         """
         Find spatial neighbors using spatial index (much faster).
         """
+        if max_neighbors is None:
+            max_neighbors = get_config().max_neighbors
+        if margin is None:
+            margin = get_config().search_margin
         bbox = cube.get_bounding_box()
         if bbox == (0, 0, 0, 0):
             return []
@@ -272,8 +276,11 @@ class CubeCollection:
         
         return neighbors
     
-    def get_temporal_neighbors(self, cube: STCube, margin: int = 1) -> List[STCube]:
+    def get_temporal_neighbors(self, cube: STCube, margin: int = None) -> List[STCube]:
         """Find temporal neighbors using temporal index."""
+        if margin is None:
+            margin = get_config().temporal_margin
+            
         start, end = cube.temporal_extent
         neighbors = set()
         
@@ -289,7 +296,8 @@ class CubeCollection:
     def get_adjacent_cubes(self, cube: STCube) -> List[STCube]:
         """Find all adjacent cubes using indices."""
         # Get spatial candidates first
-        spatial_candidates = self.get_spatial_neighbors(cube, max_neighbors=50, margin=1)
+        config = get_config()
+        spatial_candidates = self.get_spatial_neighbors(cube, max_neighbors=config.adjacency_search_neighbors, margin=1)
         
         # Filter for actual adjacency
         adjacent = []
