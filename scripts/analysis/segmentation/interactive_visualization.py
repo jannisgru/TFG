@@ -24,7 +24,6 @@ class InteractiveVisualization:
             output_directory = get_config().interactive_output_dir
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Visualization generator initialized - Output: {self.output_dir}")
     
     def _extract_safe_data(self, cube: Dict, key: str, default=None):
         """Safely extract data from cube, handling arrays and lists."""
@@ -60,14 +59,10 @@ class InteractiveVisualization:
     
     def create_all_visualizations(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str], 
                                 municipality_name: str = "Unknown") -> Dict[str, str]:
-        """Create 3D spatiotemporal visualization for vegetation clusters."""
-        logger.info(f"Creating 3D visualization for '{municipality_name}'")
-        
+        """Create 3D spatiotemporal visualization for vegetation clusters."""        
         processed_cubes = self._process_cube_data(cubes, data)
         valid_cubes = [c for c in processed_cubes if self._is_valid_cube(c)]
-        
-        logger.info(f"Processing {len(valid_cubes)} valid clusters out of {len(processed_cubes)} total")
-        
+                
         if not valid_cubes:
             logger.warning("No valid vegetation clusters found")
             return {}

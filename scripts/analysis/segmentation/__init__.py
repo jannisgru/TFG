@@ -38,6 +38,7 @@ from .segmentation_main import segment_vegetation
 from .config_loader import get_config, get_parameter, reload_config
 from .interactive_visualization import InteractiveVisualization
 from .static_visualization import StaticVisualization
+from .json_exporter import VegetationClusterJSONExporter
 
 __all__ = [
     # Main API
@@ -47,6 +48,9 @@ __all__ = [
     'VegetationSegmentationParameters',
     'STCube',
     'VegetationNDVIClusteringInitializer',
+    
+    # Export functionality
+    'VegetationClusterJSONExporter',
     
     # Configuration
     'get_config',

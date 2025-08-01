@@ -100,6 +100,9 @@ class SegmentationConfig:
     plotly_js_mode: str = "cdn"
     auto_open: bool = False
     bbox_inches: str = "tight"
+    enable_json_export: bool = True
+    include_pixel_level_data: bool = True
+    json_indent: int = 2
 
 
 class ConfigLoader:

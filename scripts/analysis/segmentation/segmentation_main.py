@@ -17,6 +17,7 @@ import gc
 import logging
 from loguru import logger
 from config_loader import get_config
+from json_exporter import VegetationClusterJSONExporter
 
 warnings.filterwarnings('ignore')
 
@@ -56,7 +57,6 @@ class VegetationSegmenter:
     
     def __init__(self, parameters: VegetationSegmentationParameters):
         self.params = parameters
-        self.logger = logging.getLogger(__name__)
     
     def segment_vegetation(self, netcdf_path: str, 
                           municipality_name,
@@ -69,53 +69,70 @@ class VegetationSegmenter:
             List of vegetation cluster dictionaries with spatial and temporal info
         """
         
-        self.logger.info(f"=== Starting Vegetation NDVI Clustering Segmentation ===")
-        self.logger.info(f"Data: {netcdf_path}")
-        self.logger.info(f"Municipality: {municipality_name}")
+        logger.info(f"Data: {netcdf_path}")
+        logger.info(f"Municipality: {municipality_name}")
         
         try:
             # Step 1: Load and validate data with lazy loading
-            self.logger.info("1. Loading and validating data...")
-            data, valid_mask, spatial_coords = self.load_and_prepare_data(
-                netcdf_path, municipality_name
-            )
-            
+            logger.info("1. Loading and validating data...")
+            data, valid_mask, spatial_coords = self.load_and_prepare_data(netcdf_path, municipality_name)
+
             if data is None:
-                self.logger.error("Failed to load data")
+                logger.error("Failed to load data")
                 return []
             
             # Step 2: Extract vegetation pixels efficiently
-            self.logger.info("2. Extracting vegetation pixels...")
-            vegetation_pixels, vegetation_coords = self.extract_vegetation_pixels(
-                data, valid_mask, spatial_coords
-            )
-            
+            logger.info("2. Extracting vegetation pixels...")
+            vegetation_pixels, vegetation_coords = self.extract_vegetation_pixels(data, valid_mask)
+
             if len(vegetation_pixels) < self.params.min_cube_size:
-                self.logger.warning(f"Insufficient vegetation pixels: {len(vegetation_pixels)}")
+                logger.warning(f"Insufficient vegetation pixels: {len(vegetation_pixels)}")
                 return []
             
             # Step 3: Perform clustering
-            self.logger.info("3. Performing spatially-constrained clustering...")
-            clusters = self.perform_spatially_constrained_clustering(
-                vegetation_pixels, vegetation_coords
-            )
+            logger.info("3. Performing spatially-constrained clustering...")
+            clusters = self.perform_spatially_constrained_clustering(vegetation_pixels, vegetation_coords)
             
             # Step 4: Create vegetation cubes
-            self.logger.info("4. Creating vegetation ST-cubes...")
-            vegetation_cubes = self.create_vegetation_cubes(clusters, data, spatial_coords)
+            logger.info("4. Creating vegetation ST-cubes...")
+            vegetation_cubes = self.create_vegetation_cubes(clusters)
             
-            # Step 5: Generate visualizations if requested
+            # Step 5: Export cluster data to JSON
+            if vegetation_cubes:
+                config = get_config()
+                if config.enable_json_export:
+                    logger.info("5. Exporting cluster data to JSON...")
+                    # Get configuration parameters for export
+                    config_params = {
+                        "min_cube_size": self.params.min_cube_size,
+                        "max_spatial_distance": self.params.max_spatial_distance,
+                        "min_vegetation_ndvi": self.params.min_vegetation_ndvi,
+                        "n_clusters": self.params.n_clusters,
+                        "ndvi_variance_threshold": self.params.ndvi_variance_threshold,
+                        "temporal_weight": self.params.temporal_weight,
+                        "netcdf_path": netcdf_path,
+                        "municipality_name": municipality_name
+                    }
+                    
+                    # Use the dedicated JSON exporter
+                    json_exporter = VegetationClusterJSONExporter()
+                    json_exporter.export_clusters_to_json(
+                        vegetation_cubes, data, output_dir, municipality_name, config_params
+                    )
+                else:
+                    logger.info("5. JSON export disabled in configuration")
+            
+            # Step 6: Generate visualizations if requested
             if create_visualizations and vegetation_cubes:
-                self.logger.info("5. Creating visualizations...")
+                logger.info("6. Creating visualizations...")
                 self.create_visualizations(
                     vegetation_cubes, data, output_dir, municipality_name
                 )
             
-            self.logger.info(f"=== Segmentation completed: {len(vegetation_cubes)} clusters ===")
             return vegetation_cubes
             
         except Exception as e:
-            self.logger.error(f"Error during vegetation segmentation: {str(e)}")
+            logger.error(f"Error during vegetation segmentation: {str(e)}")
             import traceback
             traceback.print_exc()
             return []
@@ -132,23 +149,23 @@ class VegetationSegmenter:
         try:
             # Load with chunking for memory efficiency
             data = xr.open_dataset(netcdf_path, chunks={'time': 10, 'x': 500, 'y': 500})
-            self.logger.info(f"Loaded dataset with shape: {dict(data.dims)}")
+            #logger.info(f"Loaded dataset with shape: {dict(data.dims)}")
             
             # Validate required variables
             required_vars = ['ndvi']
             missing_vars = [var for var in required_vars if var not in data.variables]
             if missing_vars:
-                self.logger.error(f"Missing required variables: {missing_vars}")
+                logger.error(f"Missing required variables: {missing_vars}")
                 return None, None, None
             
             # Filter by municipality with better error handling
             if 'municipality' in data.dims:
                 available_munis = list(data.municipality.values)
                 if municipality_name not in available_munis:
-                    self.logger.warning(f"Municipality '{municipality_name}' not found.")
-                    self.logger.info(f"Available: {available_munis[:5]}...")  # Show first 5
+                    logger.warning(f"Municipality '{municipality_name}' not found.")
+                    logger.info(f"Available: {available_munis[:5]}...")  # Show first 5
                     municipality_name = available_munis[0]
-                    self.logger.info(f"Using: {municipality_name}")
+                    logger.info(f"Using: {municipality_name}")
                 
                 data = data.sel(municipality=municipality_name)
             
@@ -161,20 +178,20 @@ class VegetationSegmenter:
             n_valid = int(valid_mask.sum())
             n_total = valid_mask.size
             
-            self.logger.info(f"Valid pixels: {n_valid}/{n_total} ({100*n_valid/n_total:.1f}%)")
+            #logger.info(f"Valid pixels: {n_valid}/{n_total} ({100*n_valid/n_total:.1f}%)")
             
             # Extract spatial coordinates
             spatial_coords = self.extract_spatial_coordinates(data)
             
             # Validate sufficient data
             if n_valid < self.params.min_cube_size:
-                self.logger.error(f"Insufficient valid pixels: {n_valid}")
+                logger.error(f"Insufficient valid pixels: {n_valid}")
                 return None, None, None
             
             return data, valid_mask, spatial_coords
             
         except Exception as e:
-            self.logger.error(f"Error loading data: {str(e)}")
+            logger.error(f"Error loading data: {str(e)}")
             return None, None, None
     
     def create_valid_mask_chunked(self, ndvi_data: xr.DataArray) -> np.ndarray:
@@ -204,10 +221,8 @@ class VegetationSegmenter:
         coords['spatial_dims'] = spatial_dims[:2]  # Use first two found
         
         return coords
-    
-    def extract_vegetation_pixels(self, data: xr.Dataset, 
-                                valid_mask: np.ndarray, 
-                                spatial_coords: Dict) -> Tuple[np.ndarray, np.ndarray]:
+
+    def extract_vegetation_pixels(self, data: xr.Dataset, valid_mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Extract vegetation pixels based on NDVI thresholds."""
         
         ndvi_data = data['ndvi'].values
@@ -232,13 +247,12 @@ class VegetationSegmenter:
         # Extract NDVI time series for vegetation pixels
         vegetation_pixels = ndvi_data[:, vegetation_mask.astype(bool)]
         
-        self.logger.info(f"Found {len(vegetation_coords)} vegetation pixels")
-        self.logger.info(f"Mean NDVI range: {mean_ndvi[vegetation_mask].min():.3f} - {mean_ndvi[vegetation_mask].max():.3f}")
+        logger.info(f"Found {len(vegetation_coords)} vegetation pixels")
+        #logger.info(f"Mean NDVI range: {mean_ndvi[vegetation_mask].min():.3f} - {mean_ndvi[vegetation_mask].max():.3f}")
         
         return vegetation_pixels.T, vegetation_coords  # Transpose for sklearn compatibility
     
-    def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, 
-                                               vegetation_coords: np.ndarray) -> List[Dict]:
+    def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, vegetation_coords: np.ndarray) -> List[Dict]:
         """Perform spatially-constrained clustering."""
         
         try:
@@ -246,11 +260,11 @@ class VegetationSegmenter:
             from sklearn.preprocessing import StandardScaler
             from scipy.spatial.distance import pdist, squareform
         except ImportError:
-            self.logger.error("Required packages not available. Install scikit-learn and scipy.")
+            logger.error("Required packages not available. Install scikit-learn and scipy.")
             return []
         
         n_pixels = len(vegetation_pixels)
-        self.logger.info(f"Clustering {n_pixels} vegetation pixels...")
+        # logger.info(f"Clustering {n_pixels} vegetation pixels...")
         
         # Standardize temporal features
         scaler = StandardScaler()
@@ -279,13 +293,11 @@ class VegetationSegmenter:
             cluster_labels, vegetation_coords, vegetation_pixels
         )
         
-        self.logger.info(f"Created {len(clusters)} spatially-constrained clusters")
+        logger.info(f"Created {len(clusters)} spatially-constrained clusters")
         
         return clusters
     
-    def apply_spatial_constraints(self, cluster_labels: np.ndarray, 
-                                coords: np.ndarray, 
-                                pixels: np.ndarray) -> List[Dict]:
+    def apply_spatial_constraints(self, cluster_labels: np.ndarray, coords: np.ndarray, pixels: np.ndarray) -> List[Dict]:
         """Apply spatial distance constraints to clusters."""
         
         from scipy.spatial.distance import cdist
@@ -327,14 +339,12 @@ class VegetationSegmenter:
         
         return clusters
     
-    def create_vegetation_cubes(self, clusters: List[Dict], 
-                              data: xr.Dataset, 
-                              spatial_coords: Dict) -> List[Dict]:
+    def create_vegetation_cubes(self, clusters: List[Dict]) -> List[Dict]:
         """Create vegetation ST-cubes from clusters."""
         
         vegetation_cubes = []
         
-        for cluster in tqdm(clusters, desc="Creating ST-cubes"):
+        for i, cluster in enumerate(clusters, 1):
             try:
                 # Calculate additional statistics
                 ndvi_profiles = cluster['ndvi_profiles']
@@ -352,7 +362,7 @@ class VegetationSegmenter:
                 vegetation_cubes.append(cube)
                 
             except Exception as e:
-                self.logger.warning(f"Error creating cube for cluster {cluster['id']}: {e}")
+                logger.warning(f"Error creating cube for cluster {cluster['id']}: {e}")
                 continue
         
         return vegetation_cubes
@@ -427,7 +437,6 @@ class VegetationSegmenter:
             visualizations_created = {}
             
             # 1. Interactive HTML visualizations
-            self.logger.info("Creating interactive visualizations...")
             interactive_viz = InteractiveVisualization(output_directory=str(output_path / "interactive"))
             interactive_files = interactive_viz.create_all_visualizations(
                 cubes=vegetation_cubes,
@@ -437,7 +446,7 @@ class VegetationSegmenter:
             visualizations_created.update(interactive_files)
             
             # 2. Static publication-ready visualizations
-            self.logger.info("Creating static visualizations...")
+            logger.info("Creating static visualizations...")
             static_viz = StaticVisualization(output_directory=str(output_path / "static"))
             static_files = static_viz.create_all_static_visualizations(
                 cubes=vegetation_cubes,
@@ -447,74 +456,16 @@ class VegetationSegmenter:
             visualizations_created.update(static_files)
             
             # 3. Legacy summary plots (for backwards compatibility)
-            self.logger.info("Creating summary plots...")
-            self.create_summary_plots(vegetation_cubes, output_path, municipality_name)
-            
-            self.logger.info(f"All visualizations created successfully!")
-            self.logger.info(f"Interactive visualizations: {output_path / 'interactive'}")
-            self.logger.info(f"Static visualizations: {output_path / 'static'}")
-            self.logger.info(f"Total files created: {len(visualizations_created)}")
+            logger.info(f"Output saved to: {output_path}")
             
             return visualizations_created
             
         except ImportError as e:
-            self.logger.warning(f"Visualization libraries not available: {str(e)}. Using basic plots.")
+            logger.warning(f"Visualization libraries not available: {str(e)}. Using basic plots.")
             # Fallback to basic visualization
-            self.create_summary_plots(vegetation_cubes, Path(output_dir), municipality_name)
         except Exception as e:
-            self.logger.warning(f"Failed to create comprehensive visualizations: {str(e)}")
-            self.logger.info("Falling back to basic summary plots...")
-            try:
-                self.create_summary_plots(vegetation_cubes, Path(output_dir), municipality_name)
-            except Exception as fallback_error:
-                self.logger.error(f"Even basic visualizations failed: {str(fallback_error)}")
             import traceback
             traceback.print_exc()
-    
-    def create_summary_plots(self, vegetation_cubes: List[Dict], 
-                           output_path: Path, 
-                           municipality_name: str):
-        """Create summary plots for vegetation analysis."""
-        
-        import matplotlib.pyplot as plt
-        
-        # Plot 1: Cluster size distribution
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
-        
-        sizes = [cube['area'] for cube in vegetation_cubes]
-        ax1.hist(sizes, bins=20, alpha=0.7)
-        ax1.set_xlabel('Cluster Size (pixels)')
-        ax1.set_ylabel('Frequency')
-        ax1.set_title('Vegetation Cluster Size Distribution')
-        
-        # Plot 2: NDVI distribution
-        mean_ndvis = [cube['mean_ndvi'] for cube in vegetation_cubes]
-        ax2.hist(mean_ndvis, bins=20, alpha=0.7, color='green')
-        ax2.set_xlabel('Mean NDVI')
-        ax2.set_ylabel('Frequency')
-        ax2.set_title('Mean NDVI Distribution')
-        
-        # Plot 3: Seasonality vs Mean NDVI
-        seasonality = [cube['seasonality_score'] for cube in vegetation_cubes]
-        ax3.scatter(mean_ndvis, seasonality, alpha=0.6)
-        ax3.set_xlabel('Mean NDVI')
-        ax3.set_ylabel('Seasonality Score')
-        ax3.set_title('Seasonality vs NDVI')
-        
-        # Plot 4: Vegetation type distribution
-        veg_types = [cube['vegetation_type'] for cube in vegetation_cubes]
-        type_counts = pd.Series(veg_types).value_counts()
-        ax4.pie(type_counts.values, labels=type_counts.index, autopct='%1.1f%%')
-        ax4.set_title('Vegetation Type Distribution')
-        
-        plt.tight_layout()
-        plt.suptitle(f'Vegetation Analysis Summary - {municipality_name}', y=0.98)
-        
-        output_file = output_path / f'vegetation_summary_{municipality_name}.png'
-        plt.savefig(output_file, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        self.logger.info(f"Summary plots saved to: {output_file}")
 
 
 def segment_vegetation(netcdf_path: str = None, 
@@ -549,11 +500,7 @@ def segment_vegetation(netcdf_path: str = None,
 
 
 # Example usage
-if __name__ == "__main__":
-    
-    # Test the version
-    logger.info("Testing vegetation segmentation...")
-    
+if __name__ == "__main__":    
     config = get_config()
     
     # Use config defaults (no parameter overrides) to respect YAML configuration
@@ -564,13 +511,7 @@ if __name__ == "__main__":
         parameters=params,
         create_visualizations=True
     )
-    
-    logger.success(f"Completed! Found {len(vegetation_cubes)} vegetation clusters.")
-    
-    # Print detailed results
-    if vegetation_cubes:
-        logger.info("=== Cluster Summary ===")
-        for i, cube in enumerate(vegetation_cubes[:5]):  # Show first 5
-            logger.info(f"Cluster {i+1}: {cube['size']} pixels, "
-                       f"NDVI={cube['mean_ndvi']:.3f}, "
-                       f"Type={cube['vegetation_type']}")
+    if len(vegetation_cubes) == 0:
+        logger.warning("No vegetation clusters found. Check your data and parameters.")
+    else:
+        logger.success(f"Completed! Found {len(vegetation_cubes)} vegetation clusters.")

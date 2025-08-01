@@ -84,9 +84,7 @@ class StaticVisualization:
                                        cubes: List[Dict], 
                                        data: Any, 
                                        municipality_name: str = "Unknown") -> Dict[str, str]:
-        """Create all static visualizations for vegetation clusters."""
-        logger.info(f"Creating static visualizations for {municipality_name}...")
-        
+        """Create all static visualizations for vegetation clusters."""        
         visualizations = {}
         
         try:
@@ -105,7 +103,6 @@ class StaticVisualization:
             self.create_temporal_analysis(cubes, data, temporal_file, municipality_name)
             visualizations["temporal_analysis"] = str(self.output_dir / temporal_file)
             
-            logger.success(f"All static visualizations created successfully in: {self.output_dir}")
             
         except Exception as e:
             logger.error(f"Error creating static visualizations: {str(e)}")
@@ -204,7 +201,6 @@ Highest NDVI: {max(cubes, key=lambda x: x['mean_ndvi'])['mean_ndvi']:.3f}"""
         plt.savefig(output_file, dpi=config.dpi, bbox_inches=config.bbox_inches, facecolor='white')
         plt.close()
         
-        print(f"Comprehensive summary saved to: {output_file}")
     
     def create_spatial_distribution_map(self, cubes: List[Dict], filename: str, municipality_name: str):
         """Create a detailed spatial distribution map."""
