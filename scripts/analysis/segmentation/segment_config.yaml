@@ -9,18 +9,18 @@
 segmentation:
   # Core algorithm parameters that users typically adjust
   min_cube_size: 10                    # Minimum pixels per vegetation cluster (enforced)
-  max_spatial_distance: 30             # Maximum pixel distance for spatial clustering (pixels)
+  max_spatial_distance: 10               # Maximum pixel distance for spatial clustering (pixels)
   min_vegetation_ndvi: 0.4             # Minimum NDVI threshold to consider pixels as vegetation (0-1)
   ndvi_variance_threshold: 0.015        # Minimum NDVI temporal variance to include pixels (0-1)
-  n_clusters: 100                        # Target number of clusters (0 = automatic detection)
-  temporal_weight: 0.8                 # Weight for temporal vs spatial features (0-1, 0=spatial only)
+  n_clusters: 100                       # Target number of clusters (0 = automatic detection)
+  temporal_weight: 0.1                  # Weight for temporal vs spatial features (0-1, 0=spatial only)
 
 # ==============================================================================
 # CLUSTERING ALGORITHM PARAMETERS
 # ==============================================================================
 clustering:
   # DBSCAN clustering parameters that may need adjustment
-  spatial_weight: 0.2                  # Weight for spatial coordinates in feature space (0-1)
+  spatial_weight: 0.4                  # Weight for spatial coordinates in feature space (0-1)
   min_samples_ratio: 0.01              # Minimum samples as ratio of total pixels for DBSCAN
   eps_search_attempts: 5               # Number of attempts to find optimal epsilon value
 

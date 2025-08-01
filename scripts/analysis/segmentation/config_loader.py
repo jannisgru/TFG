@@ -59,7 +59,8 @@ class SegmentationConfig:
     
     # 3D visualization
     cube_size_multiplier: float = 0.01
-    max_time_layers: int = 15
+    max_time_layers: int = 42
+    max_clusters_3d: int = 50
     camera_x: float = 1.5
     camera_y: float = 1.5
     camera_z: float = 1.2
@@ -199,13 +200,14 @@ class ConfigLoader:
             'color_map': viz_params.get('color_map', "Set3"),
             'grid_alpha': viz_params.get('grid_alpha', 0.3),
             'cube_size_multiplier': viz_params.get('cube_size_multiplier', 0.01),
-            'max_time_layers': viz_params.get('max_time_layers', 15),
+            'max_time_layers': viz_params.get('max_time_layers', 42),
+            'max_clusters_3d': viz_params.get('max_clusters_3d', 50),
             'camera_x': viz_params.get('camera_x', 1.5),
             'camera_y': viz_params.get('camera_y', 1.5),
             'camera_z': viz_params.get('camera_z', 1.2),
             'aspect_x': viz_params.get('aspect_x', 1.0),
             'aspect_y': viz_params.get('aspect_y', 1.0),
-            'aspect_z': viz_params.get('aspect_z', 0.05),
+            'aspect_z': viz_params.get('aspect_z', 0.2),
         })
         
         # Analysis parameters

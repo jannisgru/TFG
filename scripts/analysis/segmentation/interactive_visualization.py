@@ -124,6 +124,7 @@ class InteractiveVisualization:
     
     def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View"):
         """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis, using a grayscale basemap."""
+        config = get_config()
         if not cubes:
             logger.warning("No cubes provided for 3D visualization")
             return None
@@ -177,9 +178,13 @@ class InteractiveVisualization:
         else:
             cube_size = 0.5  # Fallback for pixel coordinates
         
-        for time_idx in range(min(15, n_time_steps)):  # Limit for performance
+        # Get config for visualization limits
+        max_time_layers = config.max_time_layers 
+        max_clusters = config.max_clusters_3d
+
+        for time_idx in range(min(max_time_layers, n_time_steps)):
             actual_year = actual_years[time_idx]
-            for cube_idx, cube in enumerate(valid_cubes[:8]):  # Limit clusters for performance
+            for cube_idx, cube in enumerate(valid_cubes[:max_clusters]):
                 pixels = self._get_pixels_safely(cube)
                 ndvi_profile = self._get_ndvi_profile(cube)
                 if time_idx < len(ndvi_profile) and pixels:
@@ -241,7 +246,6 @@ class InteractiveVisualization:
                         ))
 
         # Update layout
-        config = get_config()
         fig.update_layout(
             title=f'{title} - {len(valid_cubes)} Vegetation Clusters',
             scene=dict(
