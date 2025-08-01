@@ -24,4 +24,7 @@ dependencies:
   - ruptures
   - loguru
   - rtree
-  - dask 
+  - dask
+  - networkx
+  - scikit-learn
+  - scipy
