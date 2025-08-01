@@ -1,8 +1,8 @@
 """
-JSON Export Module for Vegetation Cluster Data
+JSON Export Module for Vegetation Segmentation Results
 
-This module handles the export of vegetation cluster analysis results to structured JSON files
-for future analysis, visualization, and research purposes.
+Handles export of vegetation cluster/cube analysis results to structured JSON files for downstream analysis, visualization, 
+and reproducibility. Supports metadata, NDVI profiles, pixel-level data, and config export.
 """
 
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime
 from loguru import logger
-from config_loader import get_config
+from .config_loader import get_config
 
 
 class VegetationClusterJSONExporter:

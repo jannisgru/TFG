@@ -1,11 +1,9 @@
 """
-Spatial Bridging Module for ST-Cube Segmentation
+Spatial Bridging Module for Vegetation ST-Cube Segmentation
 
-This module implements spatial bridging to allow clusters to grow through chains
-of similar pixels that act as "bridges" between distant but compatible vegetation areas.
-
-Core concept: Instead of hard spatial distance limits, clusters can merge if there's
-a path of similar pixels connecting them, even if they're far apart.
+Implements graph-based spatial bridging to merge clusters/cubes that are connected by chains of similar pixels, 
+even if separated by gaps. Uses NetworkX for graph construction and path finding, with configurable bridging criteria 
+for NDVI similarity and spatial connectivity.
 """
 
 import numpy as np

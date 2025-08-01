@@ -4,13 +4,11 @@ Vegetation-focused ST-Cube Segmentation Package
 A streamlined implementation of spatiotemporal cube segmentation focused specifically
 on vegetation analysis using NDVI clustering with local spatial constraints.
 
-Main Components:
-- VegetationNDVIClusteringInitializer: Creates spatially-aware NDVI clusters for vegetation
-- VegetationSegmentationParameters: Simplified parameter structure
-- STCube: Individual spatiotemporal cube representation
-- InteractiveVisualization: HTML-based Plotly visualizations
-- StaticVisualization: Publication-ready matplotlib visualizations
-- ConfigLoader: Centralized configuration management
+Package Structure:
+- core/: Core data structures (VegetationSegmentationParameters, STCube, CubeCollection)
+- visualization/: Static and interactive visualization modules
+- initializers/: Clustering initialization strategies
+- Main modules: segmentation_main, spatial_bridging, config_loader, json_exporter
 
 Main Function:
 - segment_vegetation: Run vegetation-focused NDVI clustering segmentation
@@ -31,13 +29,11 @@ Example Usage:
     
     cubes = segment_vegetation(parameters=params)
 """
-from .base import VegetationSegmentationParameters
-from .cube import STCube
+from .core import VegetationSegmentationParameters, STCube
+from .visualization import StaticVisualization, InteractiveVisualization
 from .initializers import VegetationNDVIClusteringInitializer
 from .segmentation_main import segment_vegetation
 from .config_loader import get_config, get_parameter, reload_config
-from .interactive_visualization import InteractiveVisualization
-from .static_visualization import StaticVisualization
 from .json_exporter import VegetationClusterJSONExporter
 from .spatial_bridging import SpatialBridging, BridgingParameters, apply_spatial_bridging_to_clusters
 
@@ -62,10 +58,8 @@ __all__ = [
     'get_config',
     'get_parameter',
     'reload_config',
+    
+    # Visualization
+    'StaticVisualization',
+    'InteractiveVisualization'
 ]
-
-# Add visualization classes if they imported successfully
-if InteractiveVisualization is not None:
-    __all__.append('InteractiveVisualization')
-if StaticVisualization is not None:
-    __all__.append('StaticVisualization')

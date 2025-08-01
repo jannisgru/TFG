@@ -1,14 +1,13 @@
 """
-Core parameters for vegetation-focused ST-Cube segmentation.
+Parameter Definitions for Vegetation-Focused ST-Cube Segmentation
 
-This module defines the essential parameters for NDVI-based 
-spatiotemporal cube segmentation focusing on vegetation areas.
+This module defines the dataclass for all core segmentation parameters used in NDVI-based spatiotemporal cube segmentation, including defaults and config integration. It is the central place for parameter validation and loading from config.
 """
 
 from dataclasses import dataclass
 from typing import Optional
 import warnings
-from config_loader import get_config
+from ..config_loader import get_config
 
 warnings.filterwarnings('ignore')
 

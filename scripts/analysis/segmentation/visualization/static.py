@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Static Matplotlib Visualization for Vegetation ST-Cube Segmentation Results
+Static Visualization Module for Vegetation ST-Cube Segmentation Results
 
-This script creates static visualizations using Matplotlib for
-vegetation-focused ST-cube segmentation results.
+Provides publication-ready static visualizations using Matplotlib for the results of vegetation-focused spatiotemporal cube segmentation. Includes summary plots, spatial maps, and temporal NDVI analyses for clusters/cubes.
 """
 
 import numpy as np
@@ -13,7 +12,7 @@ from typing import List, Dict, Any, Tuple
 import pandas as pd
 import warnings
 from loguru import logger
-from config_loader import get_config
+from ..config_loader import get_config
 
 warnings.filterwarnings('ignore')
 

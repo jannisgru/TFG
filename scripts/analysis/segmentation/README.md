@@ -82,40 +82,29 @@ Configure in `segment_config.yaml`:
 | `max_bridge_length` | Maximum bridge path length |
 | `min_cluster_size_for_bridging` | Minimum cluster size for bridging eligibility |
 
-## Usage
 
-**Basic:**
-```python
-from segmentation_main import segment_vegetation
-cubes = segment_vegetation()
+## File Structure
+
 ```
-
-**Custom Parameters:**
-```python
-from segmentation_main import segment_vegetation
-from base import VegetationSegmentationParameters
-
-params = VegetationSegmentationParameters(
-    max_spatial_distance=8,
-    min_vegetation_ndvi=0.45,
-    min_cube_size=20,
-    ndvi_variance_threshold=0.02,
-    n_clusters=10,
-    temporal_weight=0.5
-)
-
-cubes = segment_vegetation(
-    netcdf_path="data/landsat_multidimensional_Sant_Marti.nc",
-    parameters=params,
-    municipality_name="Sant Martí",
-    create_visualizations=True,
-    output_dir="outputs/landsat_multidimensional_Sant_Marti"
-)
-```
-
-**Command Line:**
-```bash
-python segmentation_main.py
+segmentation/
+├── __init__.py
+├── core/
+│   ├── __init__.py
+│   ├── base.py                # Parameter dataclass
+│   └── cube.py                # STCube and CubeCollection
+├── visualization/
+│   ├── __init__.py
+│   ├── static.py              # Matplotlib static plots
+│   └── interactive.py         # Plotly interactive 3D plots
+├── initializers/
+│   ├── __init__.py
+│   └── ndvi_cluster_initializer.py  # NDVI clustering logic
+├── config_loader.py           # YAML config loader
+├── json_exporter.py           # JSON export utilities
+├── spatial_bridging.py        # Graph-based cluster bridging
+├── segmentation_main.py       # Main pipeline entry point
+├── segment_config.yaml        # Main YAML config
+└── README.md
 ```
 
 ## Output Structure

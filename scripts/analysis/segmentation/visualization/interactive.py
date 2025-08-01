@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Interactive HTML Plotly Visualization for Vegetation ST-Cube Segmentation Results"""
+"""
+Interactive Visualization Module for Vegetation ST-Cube Segmentation Results
+
+This module provides interactive 3D and 2D visualizations using Plotly for the results of 
+vegetation-focused spatiotemporal cube segmentation.
+"""
 
 import numpy as np
 import xarray as xr
@@ -9,8 +14,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 from loguru import logger
 import warnings
-from config_loader import get_config
-from cube import STCube
+from ..config_loader import get_config
+from ..core.cube import STCube
 
 warnings.filterwarnings('ignore')
 

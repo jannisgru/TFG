@@ -1,8 +1,8 @@
 """
-Vegetation-focused ST-Cube Segmentation Main Script
+Main Pipeline for Vegetation-Focused ST-Cube Segmentation
 
-This script provides vegetation-specific NDVI clustering segmentation
-with local spatial constraints for analyzing vegetation patterns.
+Implements the main workflow for NDVI-based spatiotemporal cube segmentation, including data loading, preprocessing, clustering, 
+spatial bridging, and result export/visualization. Entry point for running the segmentation pipeline with configurable parameters.
 """
 
 import numpy as np
@@ -12,15 +12,14 @@ from pathlib import Path
 import warnings
 from typing import List, Optional, Tuple, Dict, Any
 from dataclasses import dataclass
-from tqdm import tqdm
 import gc
-import logging
 from loguru import logger
-from config_loader import get_config
-from json_exporter import VegetationClusterJSONExporter
+from .config_loader import get_config, get_section
+from .json_exporter import VegetationClusterJSONExporter
 import datetime
-from config_loader import get_section
-from spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
+from .spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
+from .visualization.interactive import InteractiveVisualization
+from .visualization.static import StaticVisualization
 
 warnings.filterwarnings('ignore')
 
@@ -362,7 +361,7 @@ class VegetationSegmenter:
             # For bridged clusters, be more lenient with spatial constraints
             # since spatial bridging already ensures connectivity through similar pixels
             try:
-                from config_loader import get_section
+                from .config_loader import get_section
                 bridging_cfg = get_section('bridging')
                 bridging_enabled = bridging_cfg.get('enable_spatial_bridging', False) if bridging_cfg else False
             except:
@@ -504,8 +503,8 @@ class VegetationSegmenter:
         try:
             # Import visualization modules
             try:
-                from .interactive_visualization import InteractiveVisualization
-                from .static_visualization import StaticVisualization
+                from .visualization.interactive import InteractiveVisualization
+                from .visualization.static import StaticVisualization
             except ImportError:
                 # Try direct imports if relative imports fail
                 import sys
@@ -515,8 +514,8 @@ class VegetationSegmenter:
                 current_dir = Path(__file__).parent
                 sys.path.insert(0, str(current_dir))
                 
-                from interactive_visualization import InteractiveVisualization
-                from static_visualization import StaticVisualization
+                from .visualization.interactive import InteractiveVisualization
+                from .visualization.static import StaticVisualization
             
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)

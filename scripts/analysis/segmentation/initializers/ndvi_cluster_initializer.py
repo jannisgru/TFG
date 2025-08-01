@@ -17,8 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from scipy.spatial import cKDTree
 from loguru import logger
 import warnings
-from ..base import VegetationSegmentationParameters
-from ..cube import STCube
+from ..core.base import VegetationSegmentationParameters
+from ..core.cube import STCube
 from ..config_loader import get_config
 from ..spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
 

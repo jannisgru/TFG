@@ -1,8 +1,7 @@
 """
-ST-Cube data structure and related utilities.
+STCube Data Structures and Utilities for Vegetation Segmentation
 
-This module defines the core STCube class that represents a spatiotemporal cube
-in the segmentation algorithm.
+Defines the STCube class representing a spatiotemporal vegetation cluster, including spatial, temporal, and NDVI profile properties. Also provides CubeCollection for efficient management and querying of multiple cubes, with spatial and temporal indexing support.
 """
 
 import numpy as np
@@ -12,7 +11,7 @@ from collections import defaultdict
 import rtree.index  # For spatial indexing - install with: pip install rtree
 from loguru import logger
 import warnings
-from config_loader import get_config
+from ..config_loader import get_config
 
 warnings.filterwarnings('ignore')
 

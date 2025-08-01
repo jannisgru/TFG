@@ -1,8 +1,7 @@
 """
-Configuration loader for vegetation segmentation.
+Configuration Loader for Vegetation Segmentation
 
-This module provides a centralized way to load and access configuration
-parameters from the YAML configuration file.
+Centralized module for loading, accessing, and managing all configuration parameters for the segmentation pipeline. Supports YAML config, default values, and section-based access for reproducible experiments.
 """
 
 import yaml
@@ -65,6 +64,7 @@ class SegmentationConfig:
     dpi: int = 300
     color_map: str = "Set3"
     grid_alpha: float = 0.3
+    bbox_inches: str = "tight"
     
     # 3D visualization
     cube_size_multiplier: float = 0.01
