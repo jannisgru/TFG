@@ -1,125 +1,114 @@
 # Vegetation-focused ST-Cube Segmentation
 
-A streamlined implementation of spatiotemporal cube segmentation focused on vegetation analysis using NDVI clustering with local spatial constraints.
+An implementation of spatiotemporal cube segmentation for vegetation analysis using NDVI clustering with spatial constraints.
 
-## Key Features
+---
 
-- **Vegetation-focused NDVI Clustering**: Groups nearby pixels with similar NDVI time series, focusing only on vegetation areas (NDVI ≥ 0.4).
-- **Local Spatial Constraints**: Enforces a maximum spatial distance (e.g., 10 pixels) for clustering to capture local vegetation patterns.
-- **Connected Component Analysis**: Ensures spatial connectivity within clusters.
-- **Summary Visualizations**: Generates summary plots (histograms, scatter plots, pie charts) for cluster statistics using Matplotlib and Seaborn.
-- **Performance Optimizations**: Uses chunked data loading and memory-efficient processing with Dask and Xarray.
-- **Parameterizable Segmentation**: All main parameters (NDVI threshold, spatial distance, cluster size, number of clusters, etc.) are configurable.
+## Overview
 
-## Quick Start
+This package segments satellite NDVI time series into spatially and temporally coherent "cubes" (clusters) representing vegetation patches with similar NDVI dynamics and spatial proximity.
 
-### Vegetation NDVI Clustering Segmentation
+---
 
+## How It Works
+
+1. **Data Loading**: Loads a NetCDF file containing NDVI time series, optionally filtered by municipality.
+2. **Vegetation Filtering**: Selects pixels with mean NDVI above a threshold and sufficient temporal variance.
+3. **Clustering**: 
+   - Combines NDVI time series and spatial coordinates, weighted by `temporal_weight` and `spatial_weight`.
+   - Uses DBSCAN or k-means to cluster pixels into NDVI-similar and spatially close groups.
+   - Number of clusters is controlled by `n_clusters` (if set), otherwise determined automatically.
+4. **Spatial Constraints**: Ensures clusters are spatially coherent and not too dispersed (`max_spatial_distance`).
+5. **Cube Creation**: Each cluster is converted into a "cube" with summary statistics and metadata.
+6. **Export & Visualization**: Results are exported as a single JSON file per run and visualized using static (Matplotlib) and interactive (Plotly) tools. All outputs for a run are placed in a timestamped subfolder.
+
+---
+
+## Key Parameters
+
+Set in `segment_config.yaml`:
+
+| Parameter                | Description                                                      |
+|--------------------------|------------------------------------------------------------------|
+| `min_cube_size`          | Minimum pixels for a valid cluster/cube                          |
+| `max_spatial_distance`   | Max pixel distance for spatial clustering                        |
+| `min_vegetation_ndvi`    | Minimum NDVI to consider as vegetation                           |
+| `ndvi_variance_threshold`| Minimum NDVI variance to include a pixel                         |
+| `n_clusters`             | Target number of clusters (0/None = automatic)                   |
+| `temporal_weight`        | Weight for NDVI vs. spatial features                             |
+| `spatial_weight`         | Weight for spatial coordinates in feature space                  |
+| `min_samples_ratio`      | Minimum samples as ratio of total pixels for DBSCAN              |
+| `eps_search_attempts`    | Attempts to find optimal epsilon for DBSCAN                      |
+
+---
+
+## Output Structure
+
+- **Output Folder**: Each run creates a timestamped subfolder inside your configured output directory.
+- **JSON File**: All cluster data for the run is saved as `vegetation_clusters_<municipality>.json`.
+- **Visualizations**: Static and interactive visualizations are saved in subfolders within the run's output folder.
+
+---
+
+## Usage
+
+**Basic Example:**
+```python
+from segmentation_main import segment_vegetation
+cubes = segment_vegetation()
+```
+
+**Custom Parameters:**
 ```python
 from segmentation_main import segment_vegetation
 from base import VegetationSegmentationParameters
 
-# Basic usage with default parameters
-vegetation_cubes = segment_vegetation(
-    netcdf_path="data/landsat_multidimensional_Sant_Marti.nc",
-    municipality_name="Sant Martí"
-)
-
-# With custom parameters
 params = VegetationSegmentationParameters(
-    max_spatial_distance=10,      # Local clustering within 10 pixels
-    min_vegetation_ndvi=0.4,      # Focus on areas with NDVI ≥ 0.4
-    min_cube_size=20,             # Minimum 20 pixels per cluster
-    ndvi_variance_threshold=0.01, # Filter out static areas
-    n_clusters=5,                 # Target number of clusters
-    temporal_weight=0.7           # Weight for temporal vs spatial similarity
+    max_spatial_distance=8,
+    min_vegetation_ndvi=0.45,
+    min_cube_size=20,
+    ndvi_variance_threshold=0.02,
+    n_clusters=10,
+    temporal_weight=0.5
 )
 
-vegetation_cubes = segment_vegetation(
+cubes = segment_vegetation(
     netcdf_path="data/landsat_multidimensional_Sant_Marti.nc",
     parameters=params,
     municipality_name="Sant Martí",
     create_visualizations=True,
-    output_dir="outputs/vegetation_clustering"
+    output_dir="outputs/landsat_multidimensional_Sant_Marti"
 )
 ```
 
-## Parameters
-
-### VegetationSegmentationParameters
-
-- `max_spatial_distance` (default: 10): Maximum distance in pixels for spatial connectivity.
-- `min_vegetation_ndvi` (default: 0.4): Minimum NDVI value to consider as vegetation.
-- `min_cube_size` (default: 20): Minimum number of pixels required for a valid cluster.
-- `ndvi_variance_threshold` (default: 0.01): Minimum NDVI variance over time to consider a pixel as dynamic vegetation.
-- `n_clusters` (default: 10): Target number of clusters for k-means clustering.
-- `temporal_weight` (default: 0.7): Weight for temporal (NDVI) vs spatial similarity in clustering.
-
-## How It Works
-
-1. **Data Loading**: Loads NetCDF file using Xarray with chunking for memory efficiency.
-2. **Vegetation Filtering**: Identifies pixels with NDVI ≥ threshold and sufficient temporal variance.
-3. **Clustering**: Combines standardized NDVI time series and normalized spatial coordinates, weighted by `temporal_weight`, and clusters using k-means.
-4. **Spatial Constraints**: Filters clusters to ensure spatial coherence and minimum size.
-5. **Cube Creation**: Computes statistics (mean NDVI, seasonality, trend, type) for each cluster.
-6. **Visualization**: Optionally generates summary plots for cluster size, NDVI, seasonality, and vegetation type.
-
-## Output
-
-- **List of cluster dictionaries**: Each with spatial coordinates, NDVI profiles, area, mean NDVI, seasonality, trend, and vegetation type.
-- **Summary Plots** (if enabled): Saved as PNG in the output directory, including:
-  - Cluster size distribution
-  - Mean NDVI distribution
-  - Seasonality vs NDVI scatter
-  - Vegetation type distribution
-
-## Data Format
-
-The package expects NetCDF files with:
-- `ndvi` variable: NDVI values with dimensions (time, y, x) or (time, municipality, y, x)
-- `time` dimension: Temporal axis
-- `y`, `x` dimensions: Spatial coordinates
-- Optional `municipality` dimension for multi-municipality datasets
-
-## Example Output
-
-```
-=== Starting Vegetation NDVI Clustering Segmentation ===
-Data: data/landsat_multidimensional_Sant_Marti.nc
-Municipality: Sant Martí
-1. Loading and validating data...
-Loaded dataset with shape: {'time': 139, 'y': 50, 'x': 80}
-Valid pixels: 2847/4000 (71.2%)
-2. Extracting vegetation pixels...
-Found 1523 vegetation pixels
-Mean NDVI range: 0.445 - 0.731
-3. Performing spatially-constrained clustering...
-Clustering 1523 vegetation pixels...
-Created 8 spatially-constrained clusters
-4. Creating vegetation ST-cubes...
-5. Creating visualizations...
-Summary plots saved to: outputs/vegetation_clustering/vegetation_summary_Sant Martí.png
-=== Segmentation completed: 8 clusters ===
+**Command Line:**
+```bash
+python segmentation_main.py
 ```
 
-## Files
+---
 
-- `segmentation_main.py`: Main script with `segment_vegetation()` function and core logic.
-- `base.py`: VegetationSegmentationParameters configuration class.
-- `cube.py`: STCube data structure for spatiotemporal segments.
-- `interactive_visualization.py`: (Optional) Interactive HTML visualizations using Plotly.
-- `initializers/ndvi_cluster_initializer.py`: (Optional) NDVI clustering-based initialization.
-- `test_vegetation_clustering.py`: Test script for vegetation clustering.
-- `README.md`: This documentation.
+## Parameter Tuning Tips
+
+- **`temporal_weight` vs `spatial_weight`**: Adjust to prioritize NDVI similarity or spatial proximity.
+- **`max_spatial_distance`**: Higher values allow more spatial spread in clusters.
+- **`n_clusters`**: Set to 0/None for automatic detection (DBSCAN).
+- **`min_cube_size`**: Prevents tiny/noisy clusters.
+- **`ndvi_variance_threshold`**: Filters out static vegetation.
+
+---
+
+## Data Requirements
+
+- **NetCDF file** (created using `processing/create_mdim_raster.py`) with:
+  - `ndvi` variable: NDVI values (dimensions: time, y, x or time, municipality, y, x)
+  - `time`, `y`, `x` dimensions
+  - Optional `municipality` dimension
+
+---
 
 ## License
 
 This project is part of a university thesis focusing on vegetation analysis using satellite time series data.
 
-## Example Scripts
-
-Run the main script for a demonstration:
-
-```bash
-python segmentation_main.py
-```
+---
