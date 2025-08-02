@@ -6,6 +6,10 @@ Spatiotemporal cube segmentation for vegetation analysis using NDVI clustering w
 
 This package segments satellite NDVI time series into spatially and temporally coherent clusters representing vegetation patches with similar NDVI dynamics and spatial proximity.
 
+## Example Interactive Visualization
+
+- [View 3D Spatiotemporal Example (Sant Martí)](https://jannisgru.github.io/TFG/outputs/3d_spatiotemporal_Sant_Mart%C3%AD.html)
+
 ## How It Works
 
 1. **Data Loading**: Loads NetCDF files containing NDVI time series, with optional municipality filtering

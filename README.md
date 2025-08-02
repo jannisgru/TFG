@@ -50,6 +50,10 @@ The Google Earth Engine script for data acquisition is located in `scripts/proce
 3. Configure parameters in `config/config.yaml`
 4. Run analysis and visualization scripts from `scripts/`
 
+## Documentation
+
+- [Segmentation Module Documentation](https://jannisgru.github.io/TFG/scripts/analysis/segmentation/)
+
 ---
 
 *Bachelor's thesis project on vegetation change detection using space-time cube methodology.*
