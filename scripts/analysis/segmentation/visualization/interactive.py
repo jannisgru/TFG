@@ -139,7 +139,6 @@ class InteractiveVisualization:
                 ]}
                 cube_dict.update({
                     'mean_ndvi': np.mean(cube_dict['ndvi_profile']) if cube_dict['ndvi_profile'] else 0.5,
-                    'vegetation_type': 'Unknown', 'seasonality_score': 0.0, 'trend_score': 0.0
                 })
             else:
                 # Process dictionary cubes
@@ -154,7 +153,6 @@ class InteractiveVisualization:
                     'temporal_extent': cube.get('temporal_extent', (0, time_length)),
                     'heterogeneity': cube.get('heterogeneity', cube.get('temporal_variance', 0.0)),
                     'vegetation_type': cube.get('vegetation_type', 'Unknown'),
-                    'seasonality_score': cube.get('seasonality_score', 0.0),
                     'trend_score': cube.get('trend_score', 0.0)
                 }
             processed_cubes.append(cube_dict)
@@ -369,9 +367,3 @@ class InteractiveVisualization:
         except Exception as e:
             logger.error(f"Basemap creation failed: {e}")
             return False
-
-
-if __name__ == "__main__":
-    print("Interactive Visualization for Vegetation ST-Cube Segmentation")
-    print("This module provides 3D spatiotemporal visualization for vegetation clustering results.")
-    print("Use by importing InteractiveVisualization class and calling create_all_visualizations().")

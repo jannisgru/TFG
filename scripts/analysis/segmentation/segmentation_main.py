@@ -441,7 +441,6 @@ class VegetationSegmenter:
                     'area': cluster['size'],
                     'mean_temporal_profile': np.mean(ndvi_profiles, axis=0),
                     'std_temporal_profile': np.std(ndvi_profiles, axis=0),
-                    'seasonality_score': self.calculate_seasonality_score(ndvi_profiles),
                     'trend_score': self.calculate_trend_score(ndvi_profiles),
                     'vegetation_type': self.classify_vegetation_type(cluster)
                 }
@@ -453,17 +452,6 @@ class VegetationSegmenter:
                 continue
         
         return vegetation_cubes
-    
-    def calculate_seasonality_score(self, ndvi_profiles: np.ndarray) -> float:
-        """Calculate seasonality score based on NDVI variation patterns."""
-        
-        # Simple seasonality metric based on autocorrelation
-        mean_profile = np.mean(ndvi_profiles, axis=0)
-        if len(mean_profile) < 4:
-            return 0.0
-        
-        # Calculate coefficient of variation as proxy for seasonality
-        return np.std(mean_profile) / (np.mean(mean_profile) + 1e-6)
     
     def calculate_trend_score(self, ndvi_profiles: np.ndarray) -> float:
         """Calculate trend score (positive for increasing NDVI, negative for decreasing)."""

@@ -213,13 +213,11 @@ class ConfigLoader:
         analysis_params = config_data.get('analysis', {})
         veg_class_params = analysis_params.get('vegetation_classification', {})
         trend_params = analysis_params.get('trend_analysis', {})
-        season_params = analysis_params.get('seasonality_analysis', {})
         flattened.update({
             'dense_vegetation_threshold': veg_class_params.get('dense_vegetation_threshold', 0.7),
             'moderate_vegetation_threshold': veg_class_params.get('moderate_vegetation_threshold', 0.5),
             'significant_greening_threshold': trend_params.get('significant_greening_threshold', 0.005),
-            'significant_browning_threshold': trend_params.get('significant_browning_threshold', -0.005),
-            'min_seasonal_variance': season_params.get('min_seasonal_variance', 0.01),
+            'significant_browning_threshold': trend_params.get('significant_browning_threshold', -0.005)
         })
         
         # Logging parameters
