@@ -439,12 +439,12 @@ Highest NDVI: {highest_ndvi_cube.get('mean_ndvi', 0):.3f}"""
         # Check if cubes have spatial data
         valid_cubes = []
         for cube in cubes:
-            pixels = cube.get('pixels', [])
-            if pixels is not None and len(pixels) > 0:
+            pixels = self._get_pixels_safely(cube)
+            if len(pixels) > 0:
                 valid_cubes.append(cube)
         
         if not valid_cubes:
-            print("Warning: No spatial data available for mapping")
+            logger.warning("No spatial data available for mapping")
             return
         
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -523,7 +523,6 @@ Highest NDVI: {highest_ndvi_cube.get('mean_ndvi', 0):.3f}"""
         plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
         
-        print(f"Spatial distribution map saved to: {output_file}")
     
     def create_temporal_analysis(self, cubes: List[Dict], data: Any, filename: str, municipality_name: str):
         """Create temporal analysis plots."""
