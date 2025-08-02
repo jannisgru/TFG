@@ -44,16 +44,14 @@ data:
   # Default file paths that users often modify
   default_netcdf_path: "data/processed/landsat_multidimensional_Sant_Marti.nc"    # Default input NetCDF file
   default_municipality: "Sant Martí"                               # Default municipality to analyze
-  default_output_dir: "outputs/landsat_multidimensional_Sant_Marti2"              # Default output directory
+  default_output_dir: "outputs/Sant_Marti"              # Default output directory
 
 # ==============================================================================
-# EXPORT/VISUALIZATION SETTINGS
+# EXPORT SETTINGS
 # ==============================================================================
 export:
   # Export options for cluster data
   enable_json_export: true             # Enable JSON export of cluster data
-visualization:
-  per_pixel_ndvi_coloring: true   # If true, color each cube by its own NDVI value per year
 
 # ==============================================================================
 # PERFORMANCE SETTINGS

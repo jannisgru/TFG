@@ -499,60 +499,35 @@ class VegetationSegmenter:
                                       output_dir: str,
                                       municipality_name: str):
         """Create comprehensive visualizations using both interactive and static modules."""
+            
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+            
+        # Create all visualizations
+        visualizations_created = {}
+            
+        # 1. Interactive HTML visualizations
+        interactive_viz = InteractiveVisualization(output_directory=str(output_path / "interactive"))
+        interactive_files = interactive_viz.create_all_visualizations(
+            cubes=vegetation_cubes,
+            data=data,
+            municipality_name=municipality_name
+        )
+        visualizations_created.update(interactive_files)
         
-        try:
-            # Import visualization modules
-            try:
-                from .visualization.interactive import InteractiveVisualization
-                from .visualization.static import StaticVisualization
-            except ImportError:
-                # Try direct imports if relative imports fail
-                import sys
-                import os
-                
-                # Add current directory to path
-                current_dir = Path(__file__).parent
-                sys.path.insert(0, str(current_dir))
-                
-                from .visualization.interactive import InteractiveVisualization
-                from .visualization.static import StaticVisualization
+        # 2. Static publication-ready visualizations
+        logger.info("Generating 2D Visualizations...")
+        static_viz = StaticVisualization(output_directory=str(output_path / "static"))
+        static_files = static_viz.create_all_static_visualizations(
+            cubes=vegetation_cubes,
+            data=data,
+            municipality_name=municipality_name
+        )
+        visualizations_created.update(static_files)
             
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Output saved to: {output_path}")
             
-            # Create all visualizations
-            visualizations_created = {}
-            
-            # 1. Interactive HTML visualizations
-            interactive_viz = InteractiveVisualization(output_directory=str(output_path / "interactive"))
-            interactive_files = interactive_viz.create_all_visualizations(
-                cubes=vegetation_cubes,
-                data=data,
-                municipality_name=municipality_name
-            )
-            visualizations_created.update(interactive_files)
-            
-            # 2. Static publication-ready visualizations
-            logger.info("Creating static visualizations...")
-            static_viz = StaticVisualization(output_directory=str(output_path / "static"))
-            static_files = static_viz.create_all_static_visualizations(
-                cubes=vegetation_cubes,
-                data=data,
-                municipality_name=municipality_name
-            )
-            visualizations_created.update(static_files)
-            
-            # 3. Legacy summary plots (for backwards compatibility)
-            logger.info(f"Output saved to: {output_path}")
-            
-            return visualizations_created
-            
-        except ImportError as e:
-            logger.warning(f"Visualization libraries not available: {str(e)}. Using basic plots.")
-            # Fallback to basic visualization
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
+        return visualizations_created
 
 
 def segment_vegetation(netcdf_path: str = None, 

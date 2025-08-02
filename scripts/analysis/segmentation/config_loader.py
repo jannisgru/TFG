@@ -65,7 +65,6 @@ class SegmentationConfig:
     color_map: str = "Set3"
     grid_alpha: float = 0.3
     bbox_inches: str = "tight"
-    per_pixel_ndvi_coloring: bool = False
     
     # 3D visualization
     cube_size_multiplier: float = 0.01
@@ -83,16 +82,6 @@ class SegmentationConfig:
     visualization_log: str = "logs/visualization_{time:YYYY-MM-DD}.log"
     log_level: str = "INFO"
     log_rotation: str = "1 day"
-    
-    # Legacy visualization
-    simple_netcdf_path: str = "data/processed/landsat_mdim_all_muni.nc"
-    simple_output_dir: str = "outputs/interactive"
-    time_series_name: str = "simple_time_series.html"
-    spatial_map_name: str = "simple_spatial_map.html"
-    raster_output_dir: str = "outputs/3d_raster"
-    raster_output_name: str = "3d_raster_barcelona_test.html"
-    downsample_factor: int = 2
-    target_years: list = field(default_factory=lambda: [2012, 2014, 2016, 2018, 2020, 2022])
     
     # Analysis parameters
     dense_vegetation_threshold: float = 0.7
@@ -249,18 +238,6 @@ class ConfigLoader:
             'plotly_js_mode': export_params.get('plotly_js_mode', "cdn"),
             'auto_open': export_params.get('auto_open', False),
             'bbox_inches': export_params.get('bbox_inches', "tight"),
-        })
-        
-        # Legacy visualization parameters (with defaults)
-        flattened.update({
-            'simple_netcdf_path': "data/processed/landsat_mdim_all_muni.nc",
-            'simple_output_dir': "outputs/interactive",
-            'time_series_name': "simple_time_series.html",
-            'spatial_map_name': "simple_spatial_map.html", 
-            'raster_output_dir': "outputs/3d_raster",
-            'raster_output_name': "3d_raster_barcelona_test.html",
-            'downsample_factor': 2,
-            'target_years': [2012, 2014, 2016, 2018, 2020, 2022],
         })
         
         return flattened
