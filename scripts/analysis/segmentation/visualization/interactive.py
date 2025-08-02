@@ -16,6 +16,10 @@ from loguru import logger
 import warnings
 from ..config_loader import get_config
 from ..core.cube import STCube
+from tqdm import tqdm
+import time
+import random
+import threading
 
 warnings.filterwarnings('ignore')
 
@@ -76,9 +80,39 @@ class InteractiveVisualization:
         title = f"3D Spatiotemporal View - {municipality_name}"
         
         try:
-            logger.info(f"Generating 3D spatiotemporal visualization...")
-            
+            # Create a fake progress bar to simulate loading time, because its funny lol
+            def fake_progress_bar(done_event, n_clusters):
+                total_time = random.uniform(27, 35)
+                breakpoints = sorted([random.uniform(0, total_time) for _ in range(n_clusters - 1)])
+                intervals = [breakpoints[0]] + [breakpoints[i] - breakpoints[i-1] for i in range(1, n_clusters - 1)] + [total_time - breakpoints[-1]] if n_clusters > 1 else [total_time]
+                with tqdm(total=n_clusters, desc="Generating 3D Visualization") as pbar:
+                    for i in range(n_clusters):
+                        if i == n_clusters - 1:
+                            # Wait for done_event before finishing last step
+                            while not done_event.is_set():
+                                time.sleep(0.1)
+                            pbar.update(1)
+                            break
+                        if done_event.is_set():
+                            # Rapidly finish the bar
+                            while pbar.n < n_clusters:
+                                pbar.update(1)
+                                time.sleep(0.01)
+                            break
+                        time.sleep(intervals[i])
+                        pbar.update(1)
+                    if not done_event.is_set():
+                        pbar.n = n_clusters
+                        pbar.refresh()
+
+            n_clusters = len(valid_cubes)
+            done_event = threading.Event()
+            progress_thread = threading.Thread(target=fake_progress_bar, args=(done_event, n_clusters))
+            progress_thread.start()
+
             result = self.create_3d_spatiotemporal_visualization(valid_cubes, data, filename, title)
+            done_event.set()
+            progress_thread.join()
             
             if result is not None:
                 logger.success(f"✓ 3D visualization saved successfully")
@@ -187,14 +221,14 @@ class InteractiveVisualization:
         max_time_layers = config.max_time_layers 
         max_clusters = config.max_clusters_3d
 
-        for time_idx in range(min(max_time_layers, n_time_steps)):
-            actual_year = actual_years[time_idx]
-            for cube_idx, cube in enumerate(valid_cubes[:max_clusters]):
-                pixels = self._get_pixels_safely(cube)
-                ndvi_profile = self._get_ndvi_profile(cube)
+        for cube_idx, cube in enumerate(valid_cubes[:max_clusters]):
+            pixels = self._get_pixels_safely(cube)
+            ndvi_profile = self._get_ndvi_profile(cube)
+            legendgroup = f"cluster_{cube_idx+1}"
+            for time_idx in range(min(max_time_layers, n_time_steps)):
+                actual_year = actual_years[time_idx]
                 if time_idx < len(ndvi_profile) and pixels:
                     geo_coords = [transform_pixel_to_geo(px_y, px_x, data) for px_y, px_x in pixels]
-                    
                     # Batch create cubes for better performance - combine multiple pixels into one mesh
                     if geo_coords:
                         all_x_coords = []
@@ -203,10 +237,8 @@ class InteractiveVisualization:
                         all_i_indices = []
                         all_j_indices = []
                         all_k_indices = []
-                        
                         half_size = cube_size / 2
                         time_half_size = 0.45  # Small temporal extent
-                        
                         for vertex_offset, (geo_y, geo_x) in enumerate(geo_coords):
                             # Define cube vertices (8 corners) for this pixel
                             base_idx = vertex_offset * 8
@@ -218,7 +250,6 @@ class InteractiveVisualization:
                                      geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size]
                             cube_z = [actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size,
                                      actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size]
-                            
                             all_x_coords.extend(cube_x)
                             all_y_coords.extend(cube_y)
                             all_z_coords.extend(cube_z)
@@ -235,9 +266,9 @@ class InteractiveVisualization:
                             all_i_indices.extend([i + base_idx for i in cube_i])
                             all_j_indices.extend([j + base_idx for j in cube_j])
                             all_k_indices.extend([k + base_idx for k in cube_k])
-                        
                         ndvi_val = ndvi_profile[time_idx]
-                        
+                        # Only show legend for the first year of each cluster
+                        show_legend = (time_idx == 0)
                         fig.add_trace(go.Mesh3d(
                             x=all_x_coords, y=all_y_coords, z=all_z_coords,
                             i=all_i_indices, j=all_j_indices, k=all_k_indices,
@@ -245,8 +276,9 @@ class InteractiveVisualization:
                             colorscale='RdYlGn',
                             cmin=0.0, cmax=1.0,
                             showscale=False,
-                            name=f'Cluster {cube_idx+1} - {actual_year}',
-                            showlegend=(time_idx == 0),
+                            name=f'Cluster {cube_idx+1}',
+                            legendgroup=legendgroup,
+                            showlegend=show_legend,
                             hovertemplate=f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>'
                         ))
 

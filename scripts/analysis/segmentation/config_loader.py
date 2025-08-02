@@ -65,6 +65,7 @@ class SegmentationConfig:
     color_map: str = "Set3"
     grid_alpha: float = 0.3
     bbox_inches: str = "tight"
+    per_pixel_ndvi_coloring: bool = False
     
     # 3D visualization
     cube_size_multiplier: float = 0.01

@@ -12,7 +12,7 @@ segmentation:
   max_spatial_distance: 10               # Maximum pixel distance for spatial clustering (pixels)
   min_vegetation_ndvi: 0.4             # Minimum NDVI threshold to consider pixels as vegetation (0-1)
   ndvi_variance_threshold: 0.015        # Minimum NDVI temporal variance to include pixels (0-1)
-  n_clusters: 200                       # Target number of clusters (0 = automatic detection)
+  n_clusters: 20                       # Target number of clusters (0 = automatic detection)
   temporal_weight: 0.1                  # Weight for temporal vs spatial features (0-1, 0=spatial only)
 
 # ==============================================================================
@@ -47,11 +47,13 @@ data:
   default_output_dir: "outputs/landsat_multidimensional_Sant_Marti2"              # Default output directory
 
 # ==============================================================================
-# EXPORT SETTINGS
+# EXPORT/VISUALIZATION SETTINGS
 # ==============================================================================
 export:
   # Export options for cluster data
   enable_json_export: true             # Enable JSON export of cluster data
+visualization:
+  per_pixel_ndvi_coloring: true   # If true, color each cube by its own NDVI value per year
 
 # ==============================================================================
 # PERFORMANCE SETTINGS
