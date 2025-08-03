@@ -9,7 +9,6 @@ for NDVI similarity and spatial connectivity.
 import numpy as np
 from typing import List, Dict, Tuple, Set, Optional
 from sklearn.neighbors import NearestNeighbors
-from collections import deque
 import networkx as nx
 from dataclasses import dataclass
 from loguru import logger

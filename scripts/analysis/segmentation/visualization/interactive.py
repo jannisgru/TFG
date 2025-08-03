@@ -11,7 +11,7 @@ import xarray as xr
 import plotly.graph_objects as go
 import plotly.offline as pyo
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Union
 from loguru import logger
 import warnings
 from ..config_loader import get_config

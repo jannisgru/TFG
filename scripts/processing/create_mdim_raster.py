@@ -22,7 +22,6 @@ FILTER_MUNICIPALITY = "Cerdanyola del Vallès"  # e.g. "L'Eixample" or None
 
 import warnings
 import numpy as np
-import pandas as pd
 import xarray as xr
 import rasterio
 import geopandas as gpd

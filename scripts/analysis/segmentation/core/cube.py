@@ -8,8 +8,7 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Set
 from collections import defaultdict
-import rtree.index  # For spatial indexing - install with: pip install rtree
-from loguru import logger
+import rtree.index
 import warnings
 from ..config_loader import get_config
 
