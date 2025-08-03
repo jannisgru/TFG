@@ -66,16 +66,22 @@ class VegetationSegmenter:
     def segment_vegetation(self, netcdf_path: str, 
                           municipality_name,
                           create_visualizations: bool = True,
-                          output_dir: str = "outputs/vegetation_clustering") -> List[Dict[str, Any]]:
+                          output_dir: str = "outputs/vegetation_clustering"
+                          ) -> List[Dict[str, Any]]:
         """
         Run vegetation-focused NDVI clustering segmentation.
         
+        Args:
+            netcdf_path: Path to the input NetCDF file.
+            municipality_name: Name of the municipality for analysis.
+            create_visualizations: If True, generates visualizations.
+            output_dir: Directory for saving output files.
+            add_timestamp: If True, adds timestamp subfolder to output_dir.
+                          Set to False when called from dual trend processing.
+
         Returns:
             List of vegetation cluster dictionaries with spatial and temporal info
         """
-        # Add datetime subfolder inside the given output directory
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = str(Path(output_dir) / timestamp)
 
         logger.info(f"Data: {netcdf_path}")
         logger.info(f"Municipality: {municipality_name}")
@@ -496,26 +502,24 @@ class VegetationSegmenter:
                                       data: xr.Dataset, 
                                       output_dir: str,
                                       municipality_name: str):
-        """Create comprehensive visualizations using both interactive and static modules."""
+        """Create visualizations for the segmentation results."""
             
         output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-            
-        # Create all visualizations
+        output_path.mkdir(parents=True, exist_ok=True)    
         visualizations_created = {}
             
         # 1. Interactive HTML visualizations
-        interactive_viz = InteractiveVisualization(output_directory=str(output_path / "interactive"))
+        interactive_viz = InteractiveVisualization(output_directory=str(output_path))
         interactive_files = interactive_viz.create_all_visualizations(
             cubes=vegetation_cubes,
             data=data,
             municipality_name=municipality_name
         )
         visualizations_created.update(interactive_files)
-        
+
         # 2. Static publication-ready visualizations
         logger.info("Generating 2D Visualizations...")
-        static_viz = StaticVisualization(output_directory=str(output_path / "static"))
+        static_viz = StaticVisualization(output_directory=str(output_path))
         static_files = static_viz.create_all_static_visualizations(
             cubes=vegetation_cubes,
             data=data,
@@ -575,31 +579,76 @@ def segment_vegetation(netcdf_path: str = None,
                                parameters: Optional[VegetationSegmentationParameters] = None,
                                municipality_name: str = None,
                                create_visualizations: bool = True,
-                               output_dir: str = None) -> List[Dict]:
+                               output_dir: str = None) -> Dict[str, List[Dict]]:
     """
     Vegetation segmentation function with improved performance and memory usage.
-    """
+
+    Args:
+        netcdf_path (str): Path to the input NetCDF file.
+        parameters (VegetationSegmentationParameters): Segmentation parameters.
+        municipality_name (str): Name of the municipality to analyze.
+        create_visualizations (bool): Whether to create visualizations.
+        output_dir (str): Base output directory.
+
+    Returns:
+        Dict[str, List[Dict]]: Segmentation results categorized by trend.
+        """
     config = get_config()
     
-    # Use config defaults if not provided
-    if netcdf_path is None:
-        netcdf_path = config.default_netcdf_path
-    if municipality_name is None:
-        municipality_name = config.default_municipality
-    if output_dir is None:
-        output_dir = config.default_output_dir
+    try:
+        netcdf_path = config.netcdf_path
+        municipality_name = config.municipality
+        output_dir = config.output_dir
+    except Exception as e:
+        logger.error(f"Error loading configuration: {e}")
     
     if parameters is None:
         parameters = VegetationSegmentationParameters()
     
-    segmenter = VegetationSegmenter(parameters)
+    # Always add timestamp at the top level
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamped_output_dir = str(Path(output_dir) / timestamp)
     
-    return segmenter.segment_vegetation(
-        netcdf_path=netcdf_path,
-        municipality_name=municipality_name,
-        create_visualizations=create_visualizations,
-        output_dir=output_dir
-    )
+    results = {}
+    
+    # Determine which trends to process
+    if parameters.ndvi_trend_filter is None:
+        # Process both trends
+        trends_to_process = ['increasing', 'decreasing']
+        logger.info("Running segmentation for both increasing and decreasing trends...")
+    else:
+        # Process single trend
+        trends_to_process = [parameters.ndvi_trend_filter]
+        logger.info(f"Running segmentation for {parameters.ndvi_trend_filter} trends...")
+    
+    # Process each trend
+    for trend in trends_to_process:
+        logger.info(f"PROCESSING {trend.upper()} TRENDS")
+        
+        # Create parameters for this trend
+        trend_params = VegetationSegmentationParameters(
+            min_cube_size=parameters.min_cube_size,
+            max_spatial_distance=parameters.max_spatial_distance,
+            min_vegetation_ndvi=parameters.min_vegetation_ndvi,
+            n_clusters=parameters.n_clusters,
+            ndvi_variance_threshold=parameters.ndvi_variance_threshold,
+            temporal_weight=parameters.temporal_weight,
+            ndvi_trend_filter=trend
+        )
+        
+        # Create trend-specific output directory
+        trend_output_dir = str(Path(timestamped_output_dir) / trend)
+        
+        # Run segmentation for this trend
+        segmenter = VegetationSegmenter(trend_params)
+        results[trend] = segmenter.segment_vegetation(
+            netcdf_path=netcdf_path,
+            municipality_name=municipality_name,
+            create_visualizations=create_visualizations,
+            output_dir=trend_output_dir
+        )
+    
+    return results
 
 
 # Example usage
@@ -610,11 +659,15 @@ if __name__ == "__main__":
     params = VegetationSegmentationParameters()  # Uses all config defaults
     
     # Run segmentation using config defaults for paths and municipality
-    vegetation_cubes = segment_vegetation(
+    results = segment_vegetation(
         parameters=params,
         create_visualizations=True
     )
-    if len(vegetation_cubes) == 0:
+    
+    # Handle the simplified return format - always contains trend keys
+    total_clusters = sum(len(clusters) for clusters in results.values())
+    if total_clusters == 0:
         logger.warning("No vegetation clusters found. Check your data and parameters.")
     else:
-        logger.success(f"Completed! Found {len(vegetation_cubes)} vegetation clusters.")
+        trend_summary = " and ".join([f"{len(clusters)} {trend}" for trend, clusters in results.items()])
+        logger.success(f"Found {trend_summary} clusters (total: {total_clusters}).")
