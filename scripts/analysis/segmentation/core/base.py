@@ -21,6 +21,7 @@ class VegetationSegmentationParameters:
     n_clusters: Optional[int] = None
     ndvi_variance_threshold: float = None
     temporal_weight: float = None
+    ndvi_trend_filter: Optional[str] = None  # 'increasing', 'decreasing', or None
     
     def __post_init__(self):
         # Load config and set defaults if not provided
@@ -38,6 +39,8 @@ class VegetationSegmentationParameters:
             self.ndvi_variance_threshold = config.ndvi_variance_threshold
         if self.temporal_weight is None:
             self.temporal_weight = config.temporal_weight
+        if self.ndvi_trend_filter is None:
+            self.ndvi_trend_filter = config.ndvi_trend_filter
             
         # Validation
         if self.min_cube_size < 1:
@@ -50,3 +53,5 @@ class VegetationSegmentationParameters:
             self.min_vegetation_ndvi = 1.0
         if self.n_clusters is not None and self.n_clusters < 1:
             self.n_clusters = None
+        if self.ndvi_trend_filter is not None and self.ndvi_trend_filter not in ['increasing', 'decreasing']:
+            self.ndvi_trend_filter = None

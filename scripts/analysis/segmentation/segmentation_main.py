@@ -33,6 +33,7 @@ class VegetationSegmentationParameters:
     chunk_size: int = None
     n_clusters: int = None
     temporal_weight: float = None
+    ndvi_trend_filter: Optional[str] = None  # 'increasing', 'decreasing', or None
     
     def __post_init__(self):
         # Load config and set defaults if not provided
@@ -52,6 +53,8 @@ class VegetationSegmentationParameters:
             self.n_clusters = config.n_clusters
         if self.temporal_weight is None:
             self.temporal_weight = config.temporal_weight
+        if self.ndvi_trend_filter is None:
+            self.ndvi_trend_filter = config.ndvi_trend_filter
 
 
 class VegetationSegmenter:
@@ -228,7 +231,7 @@ class VegetationSegmenter:
         return coords
 
     def extract_vegetation_pixels(self, data: xr.Dataset, valid_mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract vegetation pixels based on NDVI thresholds."""
+        """Extract vegetation pixels based on NDVI thresholds and trend filtering."""
         
         ndvi_data = data['ndvi'].values
         
@@ -244,6 +247,13 @@ class VegetationSegmenter:
             (mean_ndvi >= self.params.min_vegetation_ndvi) &
             (ndvi_variance >= self.params.ndvi_variance_threshold)
         )
+        
+        # Apply NDVI trend filtering if specified
+        if hasattr(self.params, 'ndvi_trend_filter') and self.params.ndvi_trend_filter is not None:
+            logger.info(f"Applying NDVI trend filter: {self.params.ndvi_trend_filter}")
+            trend_mask = self._calculate_trend_mask(ndvi_data, self.params.ndvi_trend_filter)
+            vegetation_mask = vegetation_mask & trend_mask
+            logger.info(f"Pixels after trend filtering: {np.sum(vegetation_mask)}")
         
         # Get coordinates of vegetation pixels
         y_indices, x_indices = np.where(vegetation_mask)
@@ -516,6 +526,49 @@ class VegetationSegmenter:
         logger.info(f"Output saved to: {output_path}")
             
         return visualizations_created
+
+    def _calculate_trend_mask(self, ndvi_data: np.ndarray, trend_filter: str) -> np.ndarray:
+        """Calculate trend mask for filtering pixels by NDVI trend direction."""
+        from scipy.stats import linregress
+        
+        logger.info(f"Calculating NDVI trends for filtering...")
+        
+        trend_mask = np.zeros((ndvi_data.shape[1], ndvi_data.shape[2]), dtype=bool)
+        
+        # Create time array for regression
+        time_array = np.arange(ndvi_data.shape[0])
+        
+        for i in range(ndvi_data.shape[1]):
+            for j in range(ndvi_data.shape[2]):
+                pixel_values = ndvi_data[:, i, j]
+                
+                # Skip pixels with too many NaN values
+                valid_mask = ~np.isnan(pixel_values)
+                if np.sum(valid_mask) < ndvi_data.shape[0] * 0.5:  # Need at least 50% valid data
+                    continue
+                
+                # Perform linear regression
+                valid_time = time_array[valid_mask]
+                valid_ndvi = pixel_values[valid_mask]
+                
+                try:
+                    slope, _, _, _, _ = linregress(valid_time, valid_ndvi)
+                    
+                    # Apply filter based on trend direction
+                    if trend_filter == 'increasing' and slope > 0:
+                        trend_mask[i, j] = True
+                    elif trend_filter == 'decreasing' and slope < 0:
+                        trend_mask[i, j] = True
+                        
+                except Exception as e:
+                    # Skip pixels where regression fails
+                    continue
+        
+        increasing_count = np.sum(trend_mask)
+        total_pixels = ndvi_data.shape[1] * ndvi_data.shape[2]
+        logger.info(f"Trend analysis: {increasing_count}/{total_pixels} pixels match '{trend_filter}' trend")
+        
+        return trend_mask
 
 
 def segment_vegetation(netcdf_path: str = None, 

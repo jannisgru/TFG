@@ -15,6 +15,7 @@ from typing import List, Tuple, Optional
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 from scipy.spatial import cKDTree
+from scipy.stats import linregress
 from loguru import logger
 import warnings
 from ..core.base import VegetationSegmentationParameters
@@ -150,6 +151,9 @@ class VegetationNDVIClusteringInitializer:
         sampling_info = f" (sampled from {n_pixels})" if len(sampled_indices) < n_pixels else ""
         logger.info(f"Found {len(ndvi_profiles)} vegetation pixels with NDVI ≥ {self.parameters.min_vegetation_ndvi}{sampling_info}")
         
+        # Apply NDVI trend filtering if specified
+        ndvi_profiles, pixel_coords = self._filter_by_ndvi_trend(ndvi_profiles, pixel_coords)
+        
         return ndvi_profiles, pixel_coords
     
     def _get_pixel_sample_indices(self, n_pixels: int) -> np.ndarray:
@@ -172,6 +176,73 @@ class VegetationNDVIClusteringInitializer:
             return indices
         
         return np.arange(n_pixels)
+    
+    def _calculate_ndvi_trend(self, ndvi_profile: np.ndarray) -> float:
+        """
+        Calculate the temporal trend (slope) of an NDVI profile.
+        
+        Args:
+            ndvi_profile: NDVI time series for a single pixel
+            
+        Returns:
+            Slope of linear regression (positive = increasing, negative = decreasing)
+        """
+        if len(ndvi_profile) < 2:
+            return 0.0
+        
+        # Create time indices
+        x = np.arange(len(ndvi_profile))
+        
+        # Handle NaN values
+        valid_mask = ~np.isnan(ndvi_profile)
+        if np.sum(valid_mask) < 2:
+            return 0.0
+            
+        x_valid = x[valid_mask]
+        y_valid = ndvi_profile[valid_mask]
+        
+        try:
+            slope, _, _, _, _ = linregress(x_valid, y_valid)
+            return slope
+        except:
+            return 0.0
+    
+    def _filter_by_ndvi_trend(self, ndvi_profiles: np.ndarray, pixel_coords: List[Tuple[int, int]]) -> Tuple[np.ndarray, List[Tuple[int, int]]]:
+        """
+        Filter pixels based on NDVI trend if trend filter is specified.
+        
+        Args:
+            ndvi_profiles: NDVI time series profiles
+            pixel_coords: Corresponding pixel coordinates
+            
+        Returns:
+            Filtered ndvi_profiles and pixel_coords
+        """
+        if self.parameters.ndvi_trend_filter is None:
+            return ndvi_profiles, pixel_coords
+        
+        logger.info(f"Filtering pixels for {self.parameters.ndvi_trend_filter} NDVI trends...")
+        
+        # Calculate trend for each pixel
+        trends = np.array([self._calculate_ndvi_trend(profile) for profile in ndvi_profiles])
+        
+        # Apply filter based on trend direction
+        if self.parameters.ndvi_trend_filter == 'increasing':
+            trend_mask = trends > 0
+        elif self.parameters.ndvi_trend_filter == 'decreasing':
+            trend_mask = trends < 0
+        else:
+            logger.warning(f"Unknown trend filter: {self.parameters.ndvi_trend_filter}. No filtering applied.")
+            return ndvi_profiles, pixel_coords
+        
+        # Filter profiles and coordinates
+        filtered_profiles = ndvi_profiles[trend_mask]
+        filtered_coords = [pixel_coords[i] for i in range(len(pixel_coords)) if trend_mask[i]]
+        
+        logger.info(f"Trend filtering: {len(filtered_profiles)} pixels with {self.parameters.ndvi_trend_filter} trends "
+                   f"(from {len(ndvi_profiles)} total pixels)")
+        
+        return filtered_profiles, filtered_coords
 
     def _perform_timed_clustering(self, 
                                     ndvi_profiles: np.ndarray, 

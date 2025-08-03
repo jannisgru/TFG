@@ -12,12 +12,12 @@ NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation',
 BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_Sant_Marti.nc"
+OUTPUT_FILE_NAME = "mdim_Cerdanyola_del_Valles.nc"
 START_YEAR = None   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = None       # Set to None to use config file value
 # Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
-FILTER_MUNICIPALITY = "Sant Martí"  # e.g. "L'Eixample" or None
+FILTER_MUNICIPALITY = "Cerdanyola del Vallès"  # e.g. "L'Eixample" or None
 # ================================
 
 import warnings
@@ -320,15 +320,8 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
         'nodata_handling': 'NaN for invalid values'
     })
     
-    # Determine output filename
-    if FILTER_MUNICIPALITY is not None:
-        # Use consistent naming pattern to match target structure
-        clean_name = FILTER_MUNICIPALITY.replace(' ', '_').replace("'", "")
-        output_file_name = f"landsat_multidimensional_{clean_name}.nc"
-    else:
-        output_file_name = OUTPUT_FILE_NAME
-    
     # Save dataset
+    output_file_name = OUTPUT_FILE_NAME
     processed_data_path.mkdir(parents=True, exist_ok=True)
     output_file = processed_data_path / output_file_name
 

@@ -13,6 +13,13 @@ Package Structure:
 Main Function:
 - segment_vegetation: Run vegetation-focused NDVI clustering segmentation
 
+Features:
+- NDVI-based clustering with spatial constraints
+- Temporal trend filtering (increasing/decreasing NDVI)
+- Spatial bridging for cluster connectivity
+- Interactive and static visualizations
+- JSON export for further analysis
+
 Example Usage:
     # Vegetation NDVI clustering segmentation with config
     from segmentation import segment_vegetation, VegetationSegmentationParameters, get_config
@@ -25,6 +32,16 @@ Example Usage:
         max_spatial_distance=10,
         min_vegetation_ndvi=0.4,
         min_cube_size=20
+    )
+    
+    cubes = segment_vegetation(parameters=params)
+    
+    # Filter for only decreasing NDVI trends (e.g., deforestation)
+    params = VegetationSegmentationParameters(
+        max_spatial_distance=10,
+        min_vegetation_ndvi=0.4,
+        min_cube_size=20,
+        ndvi_trend_filter='decreasing'
     )
     
     cubes = segment_vegetation(parameters=params)

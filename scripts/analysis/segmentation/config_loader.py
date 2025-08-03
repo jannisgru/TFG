@@ -25,6 +25,7 @@ class SegmentationConfig:
     ndvi_variance_threshold: float = 0.05
     n_clusters: Optional[int] = 10
     temporal_weight: float = 0.5
+    ndvi_trend_filter: Optional[str] = None  # 'increasing', 'decreasing', or None
     chunk_size: int = 1000
     max_pixels_for_sampling: int = 50000
     
@@ -148,6 +149,7 @@ class ConfigLoader:
             'ndvi_variance_threshold': seg_params.get('ndvi_variance_threshold', 0.05),
             'n_clusters': seg_params.get('n_clusters', 10),
             'temporal_weight': seg_params.get('temporal_weight', 0.5),
+            'ndvi_trend_filter': seg_params.get('ndvi_trend_filter', None),
         })
         
         # Clustering parameters
