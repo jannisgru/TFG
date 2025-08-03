@@ -49,9 +49,7 @@ class VegetationClusterJSONExporter:
             
         Returns:
             Path to the exported JSON file
-        """
-        self.logger.info("Exporting cluster data to JSON...")
-        
+        """        
         # Get configuration settings
         include_pixels = self.config.include_pixel_level_data
         json_indent = self.config.json_indent
@@ -97,9 +95,6 @@ class VegetationClusterJSONExporter:
                 "export_date": datetime.now().isoformat(),
                 "total_clusters": len(vegetation_cubes),
                 "years": time_coords,
-                "include_pixel_level_data": include_pixels,
-                "data_structure_version": "1.0",
-                "description": "Vegetation cluster analysis results with NDVI time series data",
                 "config_parameters": parameters
             },
             "clusters": []
@@ -112,22 +107,17 @@ class VegetationClusterJSONExporter:
                         include_pixels: bool, 
                         cluster_index: int) -> Dict[str, Any]:
         """Process a single cluster and return its JSON representation."""
-        
         # Get cluster pixel coordinates and NDVI profiles
         coordinates, pixel_ndvi_profiles = self._extract_cluster_data(cube)
-        
-        # Initialize cluster info structure
-        cluster_info = self._create_cluster_info_structure(cube, coordinates, cluster_index)
-        
+        # Initialize cluster info structure, pass time_coords
+        cluster_info = self._create_cluster_info_structure(cube, coordinates, cluster_index, time_coords)
         # Add temporal profile data
         self._add_temporal_profile_data(cluster_info, cube, time_coords)
-        
         # Process individual pixels if enabled
         if include_pixels and coordinates and pixel_ndvi_profiles:
             self._process_cluster_pixels(
                 cluster_info, coordinates, pixel_ndvi_profiles, data, time_coords
             )
-        
         return cluster_info
     
     def _extract_cluster_data(self, cube: Dict) -> tuple:
@@ -151,23 +141,52 @@ class VegetationClusterJSONExporter:
         
         return coordinates, pixel_ndvi_profiles
     
-    def _create_cluster_info_structure(self, cube: Dict, coordinates: List, cluster_index: int) -> Dict[str, Any]:
+    def _create_cluster_info_structure(self, cube: Dict, coordinates: List, cluster_index: int, time_coords: List[int]) -> Dict[str, Any]:
         """Create the basic cluster information structure."""
+        # Get NDVI profile for min/max year lookup
+        ndvi_profile = cube.get('mean_temporal_profile', [])
+        if hasattr(ndvi_profile, 'tolist'):
+            ndvi_profile = ndvi_profile.tolist()
+        elif isinstance(ndvi_profile, np.ndarray):
+            ndvi_profile = [float(x) if not np.isnan(x) else None for x in ndvi_profile]
+        elif ndvi_profile is not None:
+            ndvi_profile = [float(x) if x is not None and not np.isnan(x) else None for x in ndvi_profile]
+        else:
+            ndvi_profile = []
+
+        # Use provided time_coords for year lookup
+        if time_coords is not None and hasattr(time_coords, 'tolist'):
+            time_coords = time_coords.tolist()
+        elif isinstance(time_coords, np.ndarray):
+            time_coords = [int(x) for x in time_coords]
+
+        # Find min/max NDVI and their years
+        min_ndvi, max_ndvi, min_year, max_year = None, None, None, None
+        if ndvi_profile and time_coords and len(ndvi_profile) == len(time_coords):
+            valid = [(i, v) for i, v in enumerate(ndvi_profile) if v is not None]
+            if valid:
+                min_idx, min_ndvi = min(valid, key=lambda x: x[1])
+                max_idx, max_ndvi = max(valid, key=lambda x: x[1])
+                min_year = time_coords[min_idx]
+                max_year = time_coords[max_idx]
+
+        summary = {
+            "area_cubes": int(cube.get('area', len(coordinates))),
+            "min_ndvi": float(min_ndvi) if min_ndvi is not None else None,
+            "min_ndvi_year": int(min_year) if min_year is not None else None,
+            "max_ndvi": float(max_ndvi) if max_ndvi is not None else None,
+            "max_ndvi_year": int(max_year) if max_year is not None else None,
+            "trend_score": self._safe_float_conversion(cube.get('trend_score')),
+            "temporal_variance": self._safe_float_conversion(cube.get('temporal_variance'))
+        }
+
         return {
             "cluster_id": int(cube.get('id', cluster_index)),
-            "summary": {
-                "area_pixels": int(cube.get('area', len(coordinates))),
-                "mean_ndvi": self._safe_float_conversion(cube.get('mean_ndvi')),
-                "vegetation_type": str(cube.get('vegetation_type', 'Unknown')),
-                "seasonality_score": self._safe_float_conversion(cube.get('seasonality_score')),
-                "trend_score": self._safe_float_conversion(cube.get('trend_score')),
-                "temporal_variance": self._safe_float_conversion(cube.get('temporal_variance'))
-            },
+            "summary": summary,
             "temporal_profile": {
-                "mean_ndvi_per_year": {},
-                "cluster_ndvi_profile": []
+                "mean_ndvi_per_year": {}
             },
-            "pixels": []
+            "cubes": []
         }
     
     def _safe_float_conversion(self, value) -> float:
@@ -179,7 +198,7 @@ class VegetationClusterJSONExporter:
     def _add_temporal_profile_data(self, cluster_info: Dict, cube: Dict, time_coords: List[int]):
         """Add temporal profile data to cluster info."""
         
-        # Get cluster-level NDVI temporal profile (mean across all pixels)
+        # Get cluster-level NDVI temporal profile (mean across all cubes)
         ndvi_profile = cube.get('mean_temporal_profile', [])
         if hasattr(ndvi_profile, 'tolist'):
             ndvi_profile = ndvi_profile.tolist()
@@ -191,20 +210,21 @@ class VegetationClusterJSONExporter:
         else:
             ndvi_profile = []
         
-        cluster_info["temporal_profile"]["cluster_ndvi_profile"] = ndvi_profile
-        
         # Create mean NDVI per year mapping
         if len(ndvi_profile) == len(time_coords):
             for year, ndvi_val in zip(time_coords, ndvi_profile):
                 cluster_info["temporal_profile"]["mean_ndvi_per_year"][str(year)] = ndvi_val
-    
+
     def _process_cluster_pixels(self, 
-                               cluster_info: Dict, 
-                               coordinates: List, 
-                               pixel_ndvi_profiles: List, 
-                               data: xr.Dataset, 
-                               time_coords: List[int]):
+                           cluster_info: Dict, 
+                           coordinates: List, 
+                           pixel_ndvi_profiles: List, 
+                           data: xr.Dataset, 
+                           time_coords: List[int]):
         """Process individual pixels within a cluster."""
+        
+        # Calculate cluster mean NDVI per year for std deviation calculation
+        cluster_means_per_year = self._calculate_cluster_means_per_year(pixel_ndvi_profiles, time_coords)
         
         for pixel_idx, (pixel_coord, pixel_ndvi_series) in enumerate(zip(coordinates, pixel_ndvi_profiles)):
             if not isinstance(pixel_coord, (list, tuple)) or len(pixel_coord) < 2:
@@ -218,16 +238,57 @@ class VegetationClusterJSONExporter:
                 pixel_ndvi_series, time_coords
             )
             
+            # Calculate standard deviation from cluster mean for each year
+            std_from_cluster = self._calculate_pixel_std_from_cluster(
+                pixel_ndvi_values, cluster_means_per_year, time_coords
+            )
+            
             # Convert pixel coordinates to latitude/longitude
             lat, lon = self._convert_pixel_to_latlon(data, y_coord, x_coord)
             
             # Create pixel information structure
             pixel_info = self._create_pixel_info_structure(
-                pixel_idx, lat, lon, pixel_ndvi_dict, pixel_ndvi_values
+                pixel_idx, lat, lon, pixel_ndvi_dict, pixel_ndvi_values, std_from_cluster
             )
             
-            cluster_info["pixels"].append(pixel_info)
-    
+            cluster_info["cubes"].append(pixel_info)
+
+    def _calculate_cluster_means_per_year(self, pixel_ndvi_profiles: List, time_coords: List[int]) -> List[float]:
+        """Calculate cluster mean NDVI for each year."""
+        cluster_means = []
+        
+        for year_idx in range(len(time_coords)):
+            year_values = []
+            for pixel_profile in pixel_ndvi_profiles:
+                if hasattr(pixel_profile, 'tolist'):
+                    pixel_profile = pixel_profile.tolist()
+                elif isinstance(pixel_profile, np.ndarray):
+                    pixel_profile = pixel_profile.tolist()
+                
+                if year_idx < len(pixel_profile) and pixel_profile[year_idx] is not None:
+                    year_values.append(pixel_profile[year_idx])
+            
+            if year_values:
+                cluster_means.append(np.mean(year_values))
+            else:
+                cluster_means.append(None)
+        
+        return cluster_means
+
+    def _calculate_pixel_std_from_cluster(self, pixel_ndvi_values: List, cluster_means: List[float], time_coords: List[int]) -> Dict[str, float]:
+        """Calculate standard deviation of pixel NDVI from cluster mean for each year."""
+        std_from_cluster = {}
+        
+        for i, year in enumerate(time_coords):
+            if (i < len(pixel_ndvi_values) and pixel_ndvi_values[i] is not None and 
+                i < len(cluster_means) and cluster_means[i] is not None):
+                std_val = abs(pixel_ndvi_values[i] - cluster_means[i])
+                std_from_cluster[str(year)] = float(std_val)
+            else:
+                std_from_cluster[str(year)] = None
+        
+        return std_from_cluster
+
     def _process_pixel_ndvi_series(self, pixel_ndvi_series, time_coords: List[int]) -> tuple:
         """Process NDVI time series for a single pixel."""
         
@@ -260,15 +321,9 @@ class VegetationClusterJSONExporter:
             lat = float(data.y.isel(y=y_coord).values)
             lon = float(data.x.isel(x=x_coord).values)
         except (IndexError, KeyError, AttributeError):
-            # Fallback: try alternative coordinate names
-            try:
-                lat = float(data.latitude.isel(latitude=y_coord).values) if 'latitude' in data.coords else float(data.lat.isel(lat=y_coord).values)
-                lon = float(data.longitude.isel(longitude=x_coord).values) if 'longitude' in data.coords else float(data.lon.isel(lon=x_coord).values)
-            except:
-                # Final fallback: use pixel coordinates as placeholders
-                self.logger.warning(f"Could not convert pixel coordinates ({y_coord}, {x_coord}) to lat/lon. Using pixel coordinates as fallback.")
-                lat = float(y_coord)
-                lon = float(x_coord)
+            # Return null if coordinates are not found
+            self.logger.warning(f"Could not convert pixel coordinates ({y_coord}, {x_coord}) to lat/lon.")
+            lat, lon = None, None
         
         return lat, lon
     
@@ -277,18 +332,25 @@ class VegetationClusterJSONExporter:
                                    lat: float, 
                                    lon: float, 
                                    pixel_ndvi_dict: Dict, 
-                                   pixel_ndvi_values: List) -> Dict[str, Any]:
+                                   pixel_ndvi_values: List,
+                                   std_from_cluster: Dict) -> Dict[str, Any]:
         """Create the pixel information structure."""
         
+        # Calculate pixel statistics (without mean_ndvi)
+        pixel_stats = self._calculate_pixel_statistics(pixel_ndvi_values)
+        # Remove mean_ndvi from pixel statistics
+        if 'mean_ndvi' in pixel_stats:
+            del pixel_stats['mean_ndvi']
+        
         pixel_info = {
-            "pixel_id": pixel_idx,
+            "cube_id": pixel_idx,
             "coordinates": {
                 "latitude": lat,
                 "longitude": lon
             },
+            "cube_statistics": pixel_stats,
             "ndvi_time_series": pixel_ndvi_dict,
-            "ndvi_profile": pixel_ndvi_values,
-            "pixel_statistics": self._calculate_pixel_statistics(pixel_ndvi_values)
+            "std_from_cluster_per_year": std_from_cluster
         }
         
         return pixel_info
