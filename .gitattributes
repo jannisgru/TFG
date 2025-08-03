@@ -1,0 +1,3 @@
+# Ignore language stats for /outputs
+outputs/** linguist-vendored
+outputs/** linguist-generated
