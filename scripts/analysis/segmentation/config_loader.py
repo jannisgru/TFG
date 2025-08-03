@@ -85,7 +85,7 @@ class SegmentationConfig:
     camera_z: float = 1.2
     aspect_x: float = 1.0
     aspect_y: float = 1.0
-    aspect_z: float = 0.05
+    aspect_z: float = 0.15
     
     # Logging
     segmentation_log: str = "logs/segmentation_{time:YYYY-MM-DD}.log"

@@ -277,20 +277,98 @@ class InteractiveVisualization:
                             name=f'Cluster {cube_idx+1}',
                             legendgroup=legendgroup,
                             showlegend=show_legend,
-                            hovertemplate=f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>'
+                            hovertemplate=f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>',
+                            visible='legendonly'
                         ))
 
-        # Update layout
+        # Calculate fixed axis ranges to prevent rescaling when traces are hidden
+        if hasattr(data, 'x') and hasattr(data, 'y'):
+            x_coords_data = np.array(data.x)
+            y_coords_data = np.array(data.y)
+            
+            # Handle case where coordinates might be constant
+            x_span = x_coords_data.max() - x_coords_data.min()
+            y_span = y_coords_data.max() - y_coords_data.min()
+            
+            if x_span > 0 and y_span > 0:
+                # Add small padding to ensure all data is visible
+                x_padding = x_span * 0.02
+                y_padding = y_span * 0.02
+                x_range = [float(x_coords_data.min() - x_padding), float(x_coords_data.max() + x_padding)]
+                y_range = [float(y_coords_data.min() - y_padding), float(y_coords_data.max() + y_padding)]
+            else:
+                # Fallback for constant coordinates
+                x_center = float(x_coords_data[0]) if len(x_coords_data) > 0 else 0
+                y_center = float(y_coords_data[0]) if len(y_coords_data) > 0 else 0
+                x_range = [x_center - 0.01, x_center + 0.01]
+                y_range = [y_center - 0.01, y_center + 0.01]
+        else:
+            # Fallback for pixel coordinates
+            x_range = [0, 100]
+            y_range = [0, 100]
+        
+        # Fixed Z range based on actual years with padding
+        z_range = [float(min(actual_years) - 1), float(max(actual_years) + 1)]
+        
+        # Define visibility states for show/hide all buttons
+        n_traces = len(fig.data)
+        # Check if first trace is basemap (has no name or name doesn't start with "Cluster")
+        has_basemap = n_traces > 0 and (not hasattr(fig.data[0], 'name') or not fig.data[0].name or not fig.data[0].name.startswith('Cluster'))
+        n_basemap = 1 if has_basemap else 0
+        
+        all_visible = []
+        all_hidden = []
+        for i, trace in enumerate(fig.data):
+            if i < n_basemap:
+                # Keep basemap always visible
+                all_visible.append(True)
+                all_hidden.append(True)
+            else:
+                # Clusters: show or hide
+                all_visible.append(True)
+                all_hidden.append('legendonly')
+        
+        # Update layout with fixed axis ranges and control buttons
         fig.update_layout(
             title=f'{title} - {len(valid_cubes)} Vegetation Clusters',
             scene=dict(
-                xaxis_title='Longitude', 
-                yaxis_title='Latitude', 
-                zaxis_title='Year',
+                xaxis=dict(
+                    title='Longitude',
+                    range=x_range
+                ),
+                yaxis=dict(
+                    title='Latitude', 
+                    range=y_range
+                ),
+                zaxis=dict(
+                    title='Year',
+                    range=z_range
+                ),
                 camera=dict(eye=dict(x=config.camera_x, y=config.camera_y, z=config.camera_z)),
                 aspectmode='manual', 
                 aspectratio=dict(x=config.aspect_x, y=config.aspect_y, z=config.aspect_z)
             ),
+            updatemenus=[
+                dict(
+                    type="buttons",
+                    direction="left",
+                    x=0.1,
+                    y=1.02,
+                    showactive=True,
+                    buttons=[
+                        dict(
+                            label="Show All Clusters",
+                            method="update",
+                            args=[{"visible": all_visible}]
+                        ),
+                        dict(
+                            label="Hide All Clusters",
+                            method="update",
+                            args=[{"visible": all_hidden}]
+                        ),
+                    ],
+                )
+            ],
             width=config.figure_width, 
             height=config.figure_height
         )
