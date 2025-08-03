@@ -15,7 +15,7 @@ Main Function:
 
 Features:
 - NDVI-based clustering with spatial constraints
-- Temporal trend filtering (increasing/decreasing NDVI)
+- Temporal trend filtering (greening/browning NDVI)
 - Spatial bridging for cluster connectivity
 - Interactive and static visualizations
 - JSON export for further analysis

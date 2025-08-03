@@ -5,12 +5,12 @@ This package provides static and interactive visualization capabilities
 for the results of vegetation-focused ST-Cube segmentation.
 
 Components:
-- StaticVisualization: Publication-ready matplotlib visualizations
-- InteractiveVisualization: Interactive 3D Plotly visualizations
+- StaticVisualization: Publication-ready matplotlib visualizations (2D)
+- InteractiveVisualization: Interactive 3D Plotly visualizations (3D)
 """
 
-from .static import StaticVisualization
-from .interactive import InteractiveVisualization
+from .visualization_2d import StaticVisualization
+from .visualization_3d import InteractiveVisualization
 
 __all__ = [
     'StaticVisualization',

@@ -31,6 +31,7 @@ from datetime import datetime
 from tqdm import tqdm
 from rasterio.mask import mask
 from loguru import logger
+from scipy.ndimage import zoom
 
 warnings.filterwarnings('ignore', category=rasterio.errors.NotGeoreferencedWarning)
 
@@ -89,16 +90,9 @@ def create_municipality_masks(src, boundaries_gdf, out_transform, height, width)
             ]
             
             # Resize if needed
-            if muni_clipped.shape != municipality_ids.shape:
-                try:
-                    from scipy.ndimage import zoom
-                    scale_y = municipality_ids.shape[0] / muni_clipped.shape[0]
-                    scale_x = municipality_ids.shape[1] / muni_clipped.shape[1]
-                    muni_clipped = zoom(muni_clipped, (scale_y, scale_x), order=0)
-                except ImportError:
-                    logger.warning(f"scipy not available, skipping municipality {row['municipality_name']}")
-                    continue
-            
+            scale_y = municipality_ids.shape[0] / muni_clipped.shape[0]
+            scale_x = municipality_ids.shape[1] / muni_clipped.shape[1]
+            muni_clipped = zoom(muni_clipped, (scale_y, scale_x), order=0)    
             municipality_ids[~muni_clipped.mask] = idx
             
         except Exception as e:

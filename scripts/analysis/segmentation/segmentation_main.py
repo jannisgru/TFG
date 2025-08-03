@@ -13,12 +13,18 @@ from typing import List, Optional, Tuple, Dict, Any
 from dataclasses import dataclass
 import gc
 from loguru import logger
+import datetime
+import traceback
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from scipy.spatial.distance import cdist
+from scipy.stats import linregress
 from .config_loader import get_config, get_section
 from .json_exporter import VegetationClusterJSONExporter
-import datetime
 from .spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
-from .visualization.interactive import InteractiveVisualization
-from .visualization.static import StaticVisualization
+from .visualization.visualization_3d import InteractiveVisualization
+from .visualization.common import create_dual_trend_spatial_map
+from .visualization.visualization_2d import StaticVisualization
 
 warnings.filterwarnings('ignore')
 
@@ -32,7 +38,7 @@ class VegetationSegmentationParameters:
     chunk_size: int = None
     n_clusters: int = None
     temporal_weight: float = None
-    ndvi_trend_filter: Optional[str] = None  # 'increasing', 'decreasing', or None
+    ndvi_trend_filter: Optional[str] = None  # 'greening', 'browning', or None
     
     def __post_init__(self):
         # Load config and set defaults if not provided
@@ -147,7 +153,6 @@ class VegetationSegmenter:
             
         except Exception as e:
             logger.error(f"Error during vegetation segmentation: {str(e)}")
-            import traceback
             traceback.print_exc()
             return []
         finally:
@@ -276,14 +281,6 @@ class VegetationSegmenter:
     def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, vegetation_coords: np.ndarray) -> List[Dict]:
         """Perform spatially-constrained clustering."""
         
-        try:
-            from sklearn.cluster import KMeans
-            from sklearn.preprocessing import StandardScaler
-            from scipy.spatial.distance import pdist, squareform
-        except ImportError:
-            logger.error("Required packages not available. Install scikit-learn and scipy.")
-            return []
-        
         n_pixels = len(vegetation_pixels)
         # logger.info(f"Clustering {n_pixels} vegetation pixels...")
         
@@ -346,7 +343,6 @@ class VegetationSegmenter:
                 
         except Exception as e:
             logger.warning(f"Spatial bridging failed: {e}, continuing without bridging")
-            import traceback
             traceback.print_exc()
         
         # Apply spatial constraints - filter clusters based on spatial distance
@@ -360,9 +356,7 @@ class VegetationSegmenter:
     
     def apply_spatial_constraints(self, cluster_labels: np.ndarray, coords: np.ndarray, pixels: np.ndarray) -> List[Dict]:
         """Apply spatial distance constraints to clusters."""
-        
-        from scipy.spatial.distance import cdist
-        
+                
         clusters = []
         
         for cluster_id in np.unique(cluster_labels):
@@ -377,7 +371,6 @@ class VegetationSegmenter:
             # For bridged clusters, be more lenient with spatial constraints
             # since spatial bridging already ensures connectivity through similar pixels
             try:
-                from .config_loader import get_section
                 bridging_cfg = get_section('bridging')
                 bridging_enabled = bridging_cfg.get('enable_spatial_bridging', False) if bridging_cfg else False
             except:
@@ -470,7 +463,7 @@ class VegetationSegmenter:
         return vegetation_cubes
     
     def calculate_trend_score(self, ndvi_profiles: np.ndarray) -> float:
-        """Calculate trend score (positive for increasing NDVI, negative for decreasing)."""
+        """Calculate trend score (positive for greening NDVI, negative for browning)."""
         
         mean_profile = np.mean(ndvi_profiles, axis=0)
         if len(mean_profile) < 3:
@@ -533,7 +526,6 @@ class VegetationSegmenter:
 
     def _calculate_trend_mask(self, ndvi_data: np.ndarray, trend_filter: str) -> np.ndarray:
         """Calculate trend mask for filtering pixels by NDVI trend direction."""
-        from scipy.stats import linregress
         
         logger.info(f"Calculating NDVI trends for filtering...")
         
@@ -559,18 +551,18 @@ class VegetationSegmenter:
                     slope, _, _, _, _ = linregress(valid_time, valid_ndvi)
                     
                     # Apply filter based on trend direction
-                    if trend_filter == 'increasing' and slope > 0:
+                    if trend_filter == 'greening' and slope > 0:
                         trend_mask[i, j] = True
-                    elif trend_filter == 'decreasing' and slope < 0:
+                    elif trend_filter == 'browning' and slope < 0:
                         trend_mask[i, j] = True
                         
                 except Exception as e:
                     # Skip pixels where regression fails
                     continue
         
-        increasing_count = np.sum(trend_mask)
+        greening_count = np.sum(trend_mask)
         total_pixels = ndvi_data.shape[1] * ndvi_data.shape[2]
-        logger.info(f"Trend analysis: {increasing_count}/{total_pixels} pixels match '{trend_filter}' trend")
+        logger.info(f"Trend analysis: {greening_count}/{total_pixels} pixels match '{trend_filter}' trend")
         
         return trend_mask
 
@@ -605,6 +597,18 @@ def segment_vegetation(netcdf_path: str = None,
     if parameters is None:
         parameters = VegetationSegmentationParameters()
     
+    # Load data for dual trend visualization (if needed)
+    data = None
+    if netcdf_path:
+        try:
+            import xarray as xr
+            data = xr.open_dataset(netcdf_path, chunks={'time': 10, 'x': 500, 'y': 500})
+            if municipality_name and 'municipality' in data.dims:
+                data = data.sel(municipality=municipality_name)
+        except Exception as e:
+            logger.warning(f"Could not load data for dual trend visualization: {e}")
+            data = None
+    
     # Always add timestamp at the top level
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamped_output_dir = str(Path(output_dir) / timestamp)
@@ -614,8 +618,8 @@ def segment_vegetation(netcdf_path: str = None,
     # Determine which trends to process
     if parameters.ndvi_trend_filter is None:
         # Process both trends
-        trends_to_process = ['increasing', 'decreasing']
-        logger.info("Running segmentation for both increasing and decreasing trends...")
+        trends_to_process = ['greening', 'browning']
+        logger.info("Running segmentation for both greening and browning trends...")
     else:
         # Process single trend
         trends_to_process = [parameters.ndvi_trend_filter]
@@ -651,9 +655,17 @@ def segment_vegetation(netcdf_path: str = None,
     
     # Create combined analysis report in the timestamp folder if processing multiple trends
     if len(trends_to_process) > 1:
-        from .visualization.static import StaticVisualization
         static_viz = StaticVisualization(output_directory=timestamped_output_dir)
         static_viz.create_combined_analysis_report(results, municipality_name)
+        
+        # Create dual trend spatial map
+        logger.info("Creating dual trend spatial visualization...")
+        create_dual_trend_spatial_map(
+            results=results,
+            data=data,
+            municipality_name=municipality_name,
+            output_directory=timestamped_output_dir
+        )
     
     return results
 

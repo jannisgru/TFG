@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from pathlib import Path
 from loguru import logger
+import traceback
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -185,7 +186,6 @@ def main(netcdf_path=NETCDF_PATH, output_dir=OUTPUT_DIR):
         create_simple_spatial_map(ds, output_dir)
     except Exception as e:
         logger.error(f"Error: {e}")
-        import traceback
         logger.error(traceback.format_exc())
 
 

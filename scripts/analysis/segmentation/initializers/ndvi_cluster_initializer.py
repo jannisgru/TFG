@@ -185,7 +185,7 @@ class VegetationNDVIClusteringInitializer:
             ndvi_profile: NDVI time series for a single pixel
             
         Returns:
-            Slope of linear regression (positive = increasing, negative = decreasing)
+            Slope of linear regression (positive = greening, negative = browning)
         """
         if len(ndvi_profile) < 2:
             return 0.0
@@ -227,9 +227,9 @@ class VegetationNDVIClusteringInitializer:
         trends = np.array([self._calculate_ndvi_trend(profile) for profile in ndvi_profiles])
         
         # Apply filter based on trend direction
-        if self.parameters.ndvi_trend_filter == 'increasing':
+        if self.parameters.ndvi_trend_filter == 'greening':
             trend_mask = trends > 0
-        elif self.parameters.ndvi_trend_filter == 'decreasing':
+        elif self.parameters.ndvi_trend_filter == 'browning':
             trend_mask = trends < 0
         else:
             logger.warning(f"Unknown trend filter: {self.parameters.ndvi_trend_filter}. No filtering applied.")
