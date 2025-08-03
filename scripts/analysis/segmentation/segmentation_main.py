@@ -66,7 +66,8 @@ class VegetationSegmenter:
     def segment_vegetation(self, netcdf_path: str, 
                           municipality_name,
                           create_visualizations: bool = True,
-                          output_dir: str = "outputs/vegetation_clustering"
+                          output_dir: str = "outputs/vegetation_clustering",
+                          is_dual_trend_processing: bool = False
                           ) -> List[Dict[str, Any]]:
         """
         Run vegetation-focused NDVI clustering segmentation.
@@ -76,8 +77,8 @@ class VegetationSegmenter:
             municipality_name: Name of the municipality for analysis.
             create_visualizations: If True, generates visualizations.
             output_dir: Directory for saving output files.
-            add_timestamp: If True, adds timestamp subfolder to output_dir.
-                          Set to False when called from dual trend processing.
+            is_dual_trend_processing: If True, indicates this is part of dual trend processing.
+                          Set to True when called from dual trend processing.
 
         Returns:
             List of vegetation cluster dictionaries with spatial and temporal info
@@ -645,8 +646,15 @@ def segment_vegetation(netcdf_path: str = None,
             netcdf_path=netcdf_path,
             municipality_name=municipality_name,
             create_visualizations=create_visualizations,
-            output_dir=trend_output_dir
+            output_dir=trend_output_dir,
+            is_dual_trend_processing=(len(trends_to_process) > 1)
         )
+    
+    # Create combined analysis report in the timestamp folder if processing multiple trends
+    if len(trends_to_process) > 1:
+        from .visualization.static import StaticVisualization
+        static_viz = StaticVisualization(output_directory=timestamped_output_dir)
+        static_viz.create_combined_analysis_report(results, municipality_name)
     
     return results
 

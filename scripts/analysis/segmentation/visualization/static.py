@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
-import pandas as pd
+import plotly.graph_objs as go
 import warnings
 from loguru import logger
 from ..config_loader import get_config
@@ -100,66 +100,17 @@ class StaticVisualization:
                                        cubes: List[Dict], 
                                        data: Any, 
                                        municipality_name: str = "Unknown") -> Dict[str, str]:
-        """Create all static visualizations for vegetation clusters, including analysis report and interactive NDVI plot."""
-        try:
-            import plotly.graph_objs as go
-            import plotly.offline as pyo
-        except ImportError:
-            logger.error("Plotly not available. Please install plotly: pip install plotly")
-            return {}
+        """Create all static visualizations for vegetation clusters."""
             
-        from ..config_loader import get_config
         visualizations = {}
         
         try:
-            # 1. Export analysis report with config parameters and summary statistics
-            config = get_config()
-            report_file = self.output_dir / f"vegetation_analysis_report_{municipality_name.replace(' ', '_')}.txt"
-            
-            # Calculate summary statistics
-            stats = self._calculate_summary_statistics(cubes, municipality_name)
-            # Only include selected parameter groups
-            param_sections = [
-                ("Segmentation Parameters", ['min_cube_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold', 'n_clusters', 'temporal_weight']),
-                ("Clustering Parameters", ['spatial_weight', 'min_samples_ratio', 'eps_search_attempts']),
-                ("Bridging Parameters", ['enable_spatial_bridging', 'bridge_similarity_tolerance', 'max_bridge_gap', 'min_bridge_density', 'connectivity_radius', 'max_bridge_length', 'min_cluster_size_for_bridging']),
-                ("Data Parameters", ['netcdf_path', 'municipalities_data', 'municipality', 'output_dir']),
-                ("Analysis Parameters", ['chunk_size', 'max_pixels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
-            ]
-            config_dict = vars(config)
-            with open(report_file, 'w', encoding='utf-8') as f:
-                f.write(f"Vegetation Clustering Analysis Report - {municipality_name}\n")
-                f.write("=" * 60 + "\n\n")
-                # Summary Statistics Section
-                f.write("ANALYSIS RESULTS SUMMARY\n")
-                f.write("=" * 30 + "\n")
-                f.write(f"Municipality: {stats['municipality_name']}\n")
-                f.write(f"Total Clusters Identified: {stats['total_clusters']}\n")
-                f.write(f"Total Area Analyzed: {stats['total_area_pixels']:,} pixels\n")
-                f.write(f"Mean Cluster Size: {stats['mean_cluster_size']:.1f} pixels\n")
-                f.write(f"Overall Mean NDVI: {stats['overall_mean_ndvi']:.3f}\n")
-                f.write(f"Largest Cluster Size: {stats['largest_cluster_size']:,} pixels\n")
-                f.write(f"Highest NDVI Value: {stats['highest_ndvi_value']:.3f}\n")
-                f.write(f"Clusters with Valid NDVI: {stats['clusters_with_valid_ndvi']}\n")
-                f.write("\n")
-                # Configuration Parameters Section
-                f.write("CONFIGURATION PARAMETERS\n")
-                f.write("=" * 30 + "\n")
-                for section_title, keys in param_sections:
-                    f.write(f"\n{section_title}:\n")
-                    f.write("-" * len(section_title) + ":\n")
-                    for k in keys:
-                        if k in config_dict:
-                            f.write(f"  {k}: {config_dict[k]}\n")
-                    f.write("\n")
-            visualizations["analysis_report"] = str(report_file)
-
-            # 2. Spatial distribution map
+            # 1. Spatial distribution map
             spatial_file = f"spatial_distribution_{municipality_name.replace(' ', '_')}.png"
             self.create_spatial_distribution_map(cubes, data, spatial_file, municipality_name)
             visualizations["spatial_distribution"] = str(self.output_dir / spatial_file)
 
-            # 3. Interactive NDVI evolution plot (HTML)
+            # 2. Interactive NDVI evolution plot (HTML)
             ndvi_html_file = self.create_interactive_ndvi_evolution(cubes, data, municipality_name)
             if ndvi_html_file:
                 visualizations["ndvi_evolution_html"] = ndvi_html_file
@@ -171,16 +122,83 @@ class StaticVisualization:
 
         return visualizations
     
+    def create_combined_analysis_report(self, 
+                                      results: Dict[str, List[Dict]], 
+                                      municipality_name: str = "Unknown") -> str:
+        """Create a combined analysis report for both increasing and decreasing trends."""
+        import datetime
+        from ..config_loader import get_config
+        
+        config = get_config()
+        report_file = self.output_dir / f"vegetation_analysis_report_{municipality_name.replace(' ', '_')}.txt"
+        
+        # Calculate summary statistics for each trend
+        trend_stats = {}
+        for trend, cubes in results.items():
+            trend_stats[trend] = self._calculate_summary_statistics(cubes, municipality_name)
+        
+        # Configuration parameters section
+        param_sections = [
+            ("Segmentation Parameters", ['min_cube_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold', 'n_clusters', 'temporal_weight']),
+            ("Clustering Parameters", ['spatial_weight', 'min_samples_ratio', 'eps_search_attempts']),
+            ("Bridging Parameters", ['enable_spatial_bridging', 'bridge_similarity_tolerance', 'max_bridge_gap', 'min_bridge_density', 'connectivity_radius', 'max_bridge_length', 'min_cluster_size_for_bridging']),
+            ("Data Parameters", ['netcdf_path', 'municipalities_data', 'municipality', 'output_dir']),
+            ("Analysis Parameters", ['chunk_size', 'max_pixels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
+        ]
+        
+        config_dict = vars(config)
+        
+        with open(report_file, 'w', encoding='utf-8') as f:
+            f.write(f"Vegetation Clustering Analysis Report - {municipality_name}\n")
+            f.write("=" * 60 + "\n\n")
+            
+            # Combined Analysis Results Summary
+            f.write("ANALYSIS RESULTS SUMMARY\n")
+            f.write("=" * 30 + "\n")
+            f.write(f"Municipality: {municipality_name}\n")
+            f.write(f"Analysis Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Trends Analyzed: {', '.join(results.keys())}\n\n")
+            
+            # Summary for each trend
+            for trend, stats in trend_stats.items():
+                f.write(f"{trend.upper()} TRENDS:\n")
+                f.write("-" * 20 + "\n")
+                f.write(f"  Total Clusters: {stats['total_clusters']}\n")
+                f.write(f"  Total Area: {stats['total_area_pixels']:,} pixels\n")
+                f.write(f"  Mean Cluster Size: {stats['mean_cluster_size']:.1f} pixels\n")
+                f.write(f"  Overall Mean NDVI: {stats['overall_mean_ndvi']:.3f}\n")
+                f.write(f"  Largest Cluster: {stats['largest_cluster_size']:,} pixels\n")
+                f.write(f"  Highest NDVI: {stats['highest_ndvi_value']:.3f}\n")
+                f.write(f"  Clusters with Valid NDVI: {stats['clusters_with_valid_ndvi']}\n")
+                f.write("\n")
+            
+            # Comparison summary
+            if len(trend_stats) == 2:
+                inc_stats = trend_stats.get('increasing', {})
+                dec_stats = trend_stats.get('decreasing', {})
+                f.write("TREND COMPARISON:\n")
+                f.write("-" * 17 + "\n")
+                f.write(f"  Ratio (Increasing/Decreasing clusters): {inc_stats.get('total_clusters', 0)}/{dec_stats.get('total_clusters', 0)}\n")
+                f.write(f"  Area Ratio (Inc/Dec): {inc_stats.get('total_area_pixels', 0):,}/{dec_stats.get('total_area_pixels', 0):,} pixels\n")
+                f.write("\n")
+            
+            # Configuration Parameters Section
+            f.write("CONFIGURATION PARAMETERS\n")
+            f.write("=" * 30 + "\n")
+            for section_title, keys in param_sections:
+                f.write(f"\n{section_title}:\n")
+                f.write("-" * len(section_title) + "\n")
+                for k in keys:
+                    if k in config_dict:
+                        f.write(f"  {k}: {config_dict[k]}\n")
+                f.write("\n")
+        
+        logger.info(f"Combined analysis report saved to: {report_file}")
+        return str(report_file)
+    
     def create_interactive_ndvi_evolution(self, cubes: List[Dict], data: Any, municipality_name: str) -> Optional[str]:
         """Create an interactive HTML plot of NDVI evolution over time with toggleable cluster lines."""
-        try:
-            import plotly.graph_objs as go
-            import plotly.offline as pyo
-            import numpy as np
-        except ImportError:
-            logger.error("Plotly not available for interactive NDVI plot")
-            return None
-            
+
         try:
             # Extract time axis from data
             time_axis = None
@@ -280,7 +298,7 @@ class StaticVisualization:
             # Update layout with better styling and interactive features
             fig.update_layout(
                 title=dict(
-                    text=f"Interactive NDVI Evolution - {municipality_name}<br><sub>Click legend items to toggle cluster visibility</sub>",
+                    text=f"NDVI Evolution - {municipality_name}<br><sub>Click legend items to toggle cluster visibility</sub>",
                     x=0.5,
                     font=dict(size=16)
                 ),
