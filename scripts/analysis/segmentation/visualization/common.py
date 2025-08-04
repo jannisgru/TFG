@@ -12,8 +12,85 @@ from typing import List, Dict, Any, Tuple, Optional
 import warnings
 from loguru import logger
 from ..config_loader import get_config
+import requests
+from io import BytesIO
+from PIL import Image
 
 warnings.filterwarnings('ignore')
+
+def _add_icgc_basemap(ax, data):
+    """Add ICGC RGB basemap using WMS service."""
+    logger.info("Adding ICGC rgb basemap")
+
+    try:
+        data_crs = 'EPSG:4326'
+        if hasattr(data, 'rio') and hasattr(data.rio, 'crs') and data.rio.crs:
+            data_crs = str(data.rio.crs)
+
+        # Get geographic bounds from the data
+        bounds = _get_data_bounds(data)
+        if bounds is None:
+            logger.warning("Could not determine geographic bounds from data")
+            return
+
+        bbox_str = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
+
+        # WMS URL for ICGC RGB basemap
+        icgc_wms_url = (
+            "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms?"
+            "REQUEST=GetMap&"
+            "VERSION=1.3.0&"
+            "SERVICE=WMS&"
+            "CRS=EPSG:4326&"
+            f"BBOX={bbox_str}&"
+            "WIDTH=3000&HEIGHT=3000&"
+            "LAYERS=ortofoto_color_vigent&"
+            "STYLES=&"
+            "FORMAT=JPEG&"
+        )
+
+        response = requests.get(icgc_wms_url)
+        response.raise_for_status()
+        img = Image.open(BytesIO(response.content))
+
+        # Plot image on graph
+        ax.imshow(
+            img,
+            extent=[bounds[0], bounds[2], bounds[3], bounds[1]],
+            origin='lower',
+            alpha=1.0
+        )
+    except Exception as e:
+        logger.warning(f"ICGC basemap failed: {e}")
+
+def _get_data_bounds(data):
+    """Get the geographic bounds from the xarray dataset."""
+    try:
+        # Get coordinate arrays from the data
+        if hasattr(data, 'x') and hasattr(data, 'y'):
+            x_coords = data.x.values
+            y_coords = data.y.values
+        elif hasattr(data, 'longitude') and hasattr(data, 'latitude'):
+            x_coords = data.longitude.values
+            y_coords = data.latitude.values
+        elif hasattr(data, 'lon') and hasattr(data, 'lat'):
+            x_coords = data.lon.values
+            y_coords = data.lat.values
+        else:
+            logger.warning("Could not find coordinate arrays in data")
+            return None
+            
+        # Calculate bounds
+        lon_min, lon_max = float(x_coords.min()), float(x_coords.max())
+        lat_min, lat_max = float(y_coords.min()), float(y_coords.max())
+        bounds = [lon_min, lat_min, lon_max, lat_max]
+
+        return bounds
+        
+    except Exception as e:
+        logger.error(f"Error calculating data bounds: {e}")
+        return None
+
 
 def create_dual_trend_spatial_map(results: Dict[str, List[Dict]], 
                                  data: Any, 
@@ -42,16 +119,20 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     # Create the plot
     fig, ax = plt.subplots(1, 1, figsize=(14, 10))
     
-    # Define colors for trends
-    greening_color = '#2E8B57'  # Sea Green
-    browning_color = '#CD5C5C'  # Indian Red
+    # Set axis limits based on data extent
+    bounds = _get_data_bounds(data)
+    ax.set_xlim(bounds[0], bounds[2])
+    ax.set_ylim(bounds[1], bounds[3])
     
+    # Add ICGC basemap
+    _add_icgc_basemap(ax, data)
+    
+    greening_color = '#2E8B57'
+    browning_color = '#CD5C5C'
+
     # Calculate pixel size in data coordinates for rectangles
-    try:
-        x_res = abs(float(data.x.values[1] - data.x.values[0]))
-        y_res = abs(float(data.y.values[1] - data.y.values[0]))
-    except (IndexError, AttributeError):
-        x_res = y_res = 0.0003  # Fallback size
+    x_res = abs(float(data.x.values[1] - data.x.values[0]))
+    y_res = abs(float(data.y.values[1] - data.y.values[0]))
     
     total_pixels_plotted = 0
     trend_counts = {}
@@ -92,10 +173,10 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     # Add legend and formatting
     legend_elements = []
     if 'greening' in trend_counts:
-        legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=greening_color, alpha=0.8, 
+        legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=greening_color, alpha=0.9, 
                                            label=f'Greening NDVI ({trend_counts["greening"]:,} pixels)'))
     if 'browning' in trend_counts:
-        legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=browning_color, alpha=0.8,
+        legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=browning_color, alpha=0.9,
                                            label=f'Browning NDVI ({trend_counts["browning"]:,} pixels)'))
 
     if legend_elements:
@@ -110,12 +191,10 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     ax.grid(True, alpha=0.3)
     
     # Set equal aspect ratio to preserve geographic proportions
-    ax.set_aspect('equal', adjustable='box')
-    
-    # Auto-adjust the view to fit all data
+    ax.set_aspect('equal', adjustable='box')   
     ax.autoscale(tight=True)
     
-    # Add text box with summary statistics
+    # Text box with statistics
     stats_text = []
     if 'greening' in trend_counts and 'browning' in trend_counts:
         inc_count = trend_counts['greening']
@@ -136,13 +215,11 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
         ax.text(0.02, 0.02, textstr, transform=ax.transAxes, fontsize=10,
                 verticalalignment='bottom', bbox=props)
     
-    plt.tight_layout()
-    
-    # Save the plot
+    plt.tight_layout()  
     plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     
-    logger.success(f"Dual trend spatial map saved to: {output_file}")
+    logger.success(f"Trend spatial map saved successfully")
     return str(output_file)
 
 
