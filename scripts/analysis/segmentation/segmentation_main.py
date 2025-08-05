@@ -519,9 +519,7 @@ class VegetationSegmenter:
             municipality_name=municipality_name
         )
         visualizations_created.update(static_files)
-            
-        logger.info(f"Output saved to: {output_path}")
-            
+                        
         return visualizations_created
 
     def _calculate_trend_mask(self, ndvi_data: np.ndarray, trend_filter: str) -> np.ndarray:
@@ -659,7 +657,6 @@ def segment_vegetation(netcdf_path: str = None,
         static_viz.create_combined_analysis_report(results, municipality_name)
         
         # Create dual trend spatial map
-        logger.info("Creating dual trend spatial visualization...")
         create_dual_trend_spatial_map(
             results=results,
             data=data,

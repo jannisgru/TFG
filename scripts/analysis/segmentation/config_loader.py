@@ -54,8 +54,12 @@ class SegmentationConfig:
     municipality: str
     output_dir: str
     
+
     # Export settings (defined in YAML)
     enable_json_export: bool
+
+    # Basemap settings (defined in YAML)
+    basemap_layer: str
     
     # Parameters with defaults (not in YAML - rarely changed)
     spatial_margin: int = 1
@@ -200,6 +204,12 @@ class ConfigLoader:
             'enable_json_export': export_params['enable_json_export'],
         })
         
+        # Basemap settings (required from YAML)
+        basemap_params = config_data.get('basemap', {})
+        flattened.update({
+            'basemap_layer': basemap_params.get('basemap_layer', "ortofoto_color_vigent"),
+        })
+
         return flattened
     
     def get_parameter(self, key: str, default: Any = None) -> Any:

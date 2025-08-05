@@ -12,12 +12,12 @@ NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation',
 BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_Cerdanyola_del_Valles.nc"
+OUTPUT_FILE_NAME = "mdim_Sant_Feliu_de_Llobregat.nc"
 START_YEAR = None   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = None       # Set to None to use config file value
 # Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
-FILTER_MUNICIPALITY = "Cerdanyola del Vallès"  # e.g. "L'Eixample" or None
+FILTER_MUNICIPALITY = "Sant Feliu de Llobregat"  # e.g. "L'Eixample" or None
 # ================================
 
 import warnings

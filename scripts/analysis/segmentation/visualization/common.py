@@ -6,6 +6,7 @@ Shared visualization utilities for dual trend analysis and comparative visualiza
 """
 
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
@@ -35,7 +36,19 @@ def _add_icgc_basemap(ax, data):
 
         bbox_str = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
 
-        # WMS URL for ICGC RGB basemap
+
+        # Get basemap layer from config
+        basemap_layer = get_config().basemap_layer
+
+        # Calculate WIDTH and HEIGHT for 3m per pixel or roughly 1:10714 
+        avg_lat = (bounds[1] + bounds[3]) / 2
+        cos_lat = math.cos(math.radians(avg_lat))
+        width_m = abs(bounds[2] - bounds[0]) * 111320 * cos_lat  # longitude to meters
+        height_m = abs(bounds[3] - bounds[1]) * 110574           # latitude to meters
+        width_px = max(1, int(round(width_m / 3)))
+        height_px = max(1, int(round(height_m / 3)))
+
+        # WMS URL for ICGC basemap
         icgc_wms_url = (
             "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms?"
             "REQUEST=GetMap&"
@@ -43,12 +56,12 @@ def _add_icgc_basemap(ax, data):
             "SERVICE=WMS&"
             "CRS=EPSG:4326&"
             f"BBOX={bbox_str}&"
-            "WIDTH=3000&HEIGHT=3000&"
-            "LAYERS=ortofoto_color_vigent&"
+            f"WIDTH={width_px}&HEIGHT={height_px}&"
+            f"LAYERS={basemap_layer}&"
             "STYLES=&"
             "FORMAT=JPEG&"
         )
-
+        logger.debug(f"ICGC WMS URL: {icgc_wms_url}")
         response = requests.get(icgc_wms_url)
         response.raise_for_status()
         img = Image.open(BytesIO(response.content))
@@ -117,7 +130,7 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     output_file = output_dir / filename
     
     # Create the plot
-    fig, ax = plt.subplots(1, 1, figsize=(14, 10))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
     
     # Set axis limits based on data extent
     bounds = _get_data_bounds(data)

@@ -192,7 +192,6 @@ class StaticVisualization:
                         f.write(f"  {k}: {config_dict[k]}\n")
                 f.write("\n")
         
-        logger.info(f"Combined analysis report saved to: {report_file}")
         return str(report_file)
     
     def create_interactive_ndvi_evolution(self, cubes: List[Dict], data: Any, municipality_name: str) -> Optional[str]:
