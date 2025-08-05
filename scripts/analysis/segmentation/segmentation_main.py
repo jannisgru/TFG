@@ -72,7 +72,8 @@ class VegetationSegmenter:
                           municipality_name,
                           create_visualizations: bool = True,
                           output_dir: str = "outputs/vegetation_clustering",
-                          is_dual_trend_processing: bool = False
+                          is_dual_trend_processing: bool = False,
+                          global_cluster_counter: int = 0
                           ) -> List[Dict[str, Any]]:
         """
         Run vegetation-focused NDVI clustering segmentation.
@@ -84,6 +85,7 @@ class VegetationSegmenter:
             output_dir: Directory for saving output files.
             is_dual_trend_processing: If True, indicates this is part of dual trend processing.
                           Set to True when called from dual trend processing.
+            global_cluster_counter: Starting cluster ID for consistent numbering across trends.
 
         Returns:
             List of vegetation cluster dictionaries with spatial and temporal info
@@ -111,7 +113,7 @@ class VegetationSegmenter:
             
             # Step 3: Perform clustering
             logger.info("3. Performing spatially-constrained clustering...")
-            clusters = self.perform_spatially_constrained_clustering(vegetation_pixels, vegetation_coords)
+            clusters = self.perform_spatially_constrained_clustering(vegetation_pixels, vegetation_coords, global_cluster_counter)
             
             # Step 4: Create vegetation cubes
             logger.info("4. Creating vegetation ST-cubes...")
@@ -278,7 +280,7 @@ class VegetationSegmenter:
         
         return vegetation_pixels.T, vegetation_coords  # Transpose for sklearn compatibility
     
-    def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, vegetation_coords: np.ndarray) -> List[Dict]:
+    def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, vegetation_coords: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
         """Perform spatially-constrained clustering."""
         
         n_pixels = len(vegetation_pixels)
@@ -347,14 +349,14 @@ class VegetationSegmenter:
         
         # Apply spatial constraints - filter clusters based on spatial distance
         clusters = self.apply_spatial_constraints(
-            cluster_labels, vegetation_coords, vegetation_pixels
+            cluster_labels, vegetation_coords, vegetation_pixels, global_cluster_counter
         )
         
         logger.info(f"Created {len(clusters)} spatially-constrained clusters")
         
         return clusters
     
-    def apply_spatial_constraints(self, cluster_labels: np.ndarray, coords: np.ndarray, pixels: np.ndarray) -> List[Dict]:
+    def apply_spatial_constraints(self, cluster_labels: np.ndarray, coords: np.ndarray, pixels: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
         """Apply spatial distance constraints to clusters."""
                 
         clusters = []
@@ -389,7 +391,7 @@ class VegetationSegmenter:
                     
                     if valid_pixels.sum() >= self.params.min_cube_size:
                         clusters.append({
-                            'id': len(clusters),
+                            'id': global_cluster_counter + len(clusters),
                             'coordinates': cluster_coords[valid_pixels],
                             'ndvi_profiles': cluster_pixels[valid_pixels],
                             'size': valid_pixels.sum(),
@@ -400,7 +402,7 @@ class VegetationSegmenter:
                 else:
                     # Single pixel cluster - keep it if it meets minimum size
                     clusters.append({
-                        'id': len(clusters),
+                        'id': global_cluster_counter + len(clusters),
                         'coordinates': cluster_coords,
                         'ndvi_profiles': cluster_pixels,
                         'size': len(cluster_coords),
@@ -424,7 +426,7 @@ class VegetationSegmenter:
                     
                     if valid_pixels.sum() >= self.params.min_cube_size:
                         clusters.append({
-                            'id': len(clusters),
+                            'id': global_cluster_counter + len(clusters),
                             'coordinates': cluster_coords[valid_pixels],
                             'ndvi_profiles': cluster_pixels[valid_pixels],
                             'size': valid_pixels.sum(),
@@ -613,6 +615,9 @@ def segment_vegetation(netcdf_path: str = None,
     
     results = {}
     
+    # Initialize global cluster counter
+    global_cluster_counter = 0
+    
     # Determine which trends to process
     if parameters.ndvi_trend_filter is None:
         # Process both trends
@@ -643,13 +648,20 @@ def segment_vegetation(netcdf_path: str = None,
         
         # Run segmentation for this trend
         segmenter = VegetationSegmenter(trend_params)
-        results[trend] = segmenter.segment_vegetation(
+        trend_results = segmenter.segment_vegetation(
             netcdf_path=netcdf_path,
             municipality_name=municipality_name,
             create_visualizations=create_visualizations,
             output_dir=trend_output_dir,
-            is_dual_trend_processing=(len(trends_to_process) > 1)
+            is_dual_trend_processing=(len(trends_to_process) > 1),
+            global_cluster_counter=global_cluster_counter
         )
+        
+        # Update global counter for next trend
+        if trend_results:
+            global_cluster_counter += len(trend_results)
+        
+        results[trend] = trend_results
     
     # Create combined analysis report in the timestamp folder if processing multiple trends
     if len(trends_to_process) > 1:

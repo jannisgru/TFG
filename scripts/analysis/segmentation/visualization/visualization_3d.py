@@ -222,7 +222,10 @@ class InteractiveVisualization:
         for cube_idx, cube in enumerate(valid_cubes[:max_clusters]):
             pixels = self._get_pixels_safely(cube)
             ndvi_profile = self._get_ndvi_profile(cube)
-            legendgroup = f"cluster_{cube_idx+1}"
+            
+            # Get the cluster ID from the cube data
+            actual_cluster_id = cube.get('id', cube_idx) + 1
+            legendgroup = f"cluster_{actual_cluster_id}"
             for time_idx in range(min(max_time_layers, n_time_steps)):
                 actual_year = actual_years[time_idx]
                 if time_idx < len(ndvi_profile) and pixels:
@@ -274,10 +277,10 @@ class InteractiveVisualization:
                             colorscale='RdYlGn',
                             cmin=0.0, cmax=1.0,
                             showscale=False,
-                            name=f'Cluster {cube_idx+1}',
+                            name=f'Cluster {actual_cluster_id}',
                             legendgroup=legendgroup,
                             showlegend=show_legend,
-                            hovertemplate=f'Cluster {cube_idx+1}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>',
+                            hovertemplate=f'Cluster {actual_cluster_id}<br>Year: {actual_year}<br>NDVI: {ndvi_val:.3f}<extra></extra>',
                             visible='legendonly'
                         ))
 

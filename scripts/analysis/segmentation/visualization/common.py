@@ -248,7 +248,6 @@ def create_interactive_temporal_trend_map(results: Dict[str, List[Dict]],
         
     # Prepare data for all clusters and all years
     cluster_data = []
-    cluster_id = 0
     
     # Process both greening and browning clusters
     for trend_type in ['greening', 'browning']:
@@ -259,6 +258,9 @@ def create_interactive_temporal_trend_map(results: Dict[str, List[Dict]],
             pixels = _get_pixels_safely(cube)
             if not pixels:
                 continue
+                
+            # Get cluster ID from the cube data
+            actual_cluster_id = cube.get('id', cube_idx)
                 
             # Get NDVI profile for this cluster - use mean_temporal_profile from segmentation
             ndvi_profile = None
@@ -297,7 +299,7 @@ def create_interactive_temporal_trend_map(results: Dict[str, List[Dict]],
                     year = time_coords[year_idx + 1]  # +1 because change is relative to previous year
                     
                     cluster_data.append({
-                        'cluster_id': cluster_id,
+                        'cluster_id': actual_cluster_id + 1,
                         'trend_type': trend_type,
                         'lat': lat,
                         'lon': lon,
@@ -307,8 +309,6 @@ def create_interactive_temporal_trend_map(results: Dict[str, List[Dict]],
                         'pixel_x': x_coord,
                         'pixel_y': y_coord
                     })
-            
-            cluster_id += 1
         
     # Create DataFrame
     df = pd.DataFrame(cluster_data) 

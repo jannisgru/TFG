@@ -181,7 +181,7 @@ class VegetationClusterJSONExporter:
         }
 
         return {
-            "cluster_id": int(cube.get('id', cluster_index)),
+            "cluster_id": int(cube.get('id', cluster_index)) + 1,
             "summary": summary,
             "temporal_profile": {
                 "mean_ndvi_per_year": {}
