@@ -9,7 +9,9 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
+import plotly.graph_objects as go
+import pandas as pd
+from typing import List, Dict, Any, Tuple
 import warnings
 from loguru import logger
 from ..config_loader import get_config
@@ -19,90 +21,96 @@ from PIL import Image
 
 warnings.filterwarnings('ignore')
 
+def _get_icgc_basemap_url(data):
+    """Get ICGC basemap WMS URL for the given data bounds."""
+    # Get geographic bounds from the data
+    bounds = _get_data_bounds(data)
+    bbox_str = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
+    basemap_layer = get_config().basemap_layer
+
+    # Calculate pixel size based on bounds for consistent resolution across images
+    avg_lat = (bounds[1] + bounds[3]) / 2
+    cos_lat = math.cos(math.radians(avg_lat))
+    width_m = abs(bounds[2] - bounds[0]) * 111320 * cos_lat
+    height_m = abs(bounds[3] - bounds[1]) * 110574
+    width_px = max(1, int(round(width_m / 3)))
+    height_px = max(1, int(round(height_m / 3)))
+
+    # Construct the WMS URL for ICGC RGB basemap
+    icgc_wms_url = (
+        "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms?"
+        "REQUEST=GetMap&"
+        "VERSION=1.3.0&"
+        "SERVICE=WMS&"
+        "CRS=EPSG:4326&"
+        f"BBOX={bbox_str}&"
+        f"WIDTH={width_px}&HEIGHT={height_px}&"
+        f"LAYERS={basemap_layer}&"
+        "STYLES=&"
+        "FORMAT=JPEG&"
+    )
+    return icgc_wms_url, bounds
+
+
 def _add_icgc_basemap(ax, data):
-    """Add ICGC RGB basemap using WMS service."""
+    """Add ICGC RGB basemap using WMS service for matplotlib plots."""
     logger.info("Adding ICGC rgb basemap")
-
-    try:
-        data_crs = 'EPSG:4326'
-        if hasattr(data, 'rio') and hasattr(data.rio, 'crs') and data.rio.crs:
-            data_crs = str(data.rio.crs)
-
-        # Get geographic bounds from the data
-        bounds = _get_data_bounds(data)
-        if bounds is None:
-            logger.warning("Could not determine geographic bounds from data")
-            return
-
-        bbox_str = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
+    icgc_wms_url, bounds = _get_icgc_basemap_url(data)
+    response = requests.get(icgc_wms_url)
+    img = Image.open(BytesIO(response.content))
+    ax.imshow(
+        img,
+        extent=[bounds[0], bounds[2], bounds[3], bounds[1]],
+        origin='lower',
+        alpha=1.0
+    )
 
 
-        # Get basemap layer from config
-        basemap_layer = get_config().basemap_layer
-
-        # Calculate WIDTH and HEIGHT for 3m per pixel or roughly 1:10714 
-        avg_lat = (bounds[1] + bounds[3]) / 2
-        cos_lat = math.cos(math.radians(avg_lat))
-        width_m = abs(bounds[2] - bounds[0]) * 111320 * cos_lat  # longitude to meters
-        height_m = abs(bounds[3] - bounds[1]) * 110574           # latitude to meters
-        width_px = max(1, int(round(width_m / 3)))
-        height_px = max(1, int(round(height_m / 3)))
-
-        # WMS URL for ICGC basemap
-        icgc_wms_url = (
-            "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms?"
-            "REQUEST=GetMap&"
-            "VERSION=1.3.0&"
-            "SERVICE=WMS&"
-            "CRS=EPSG:4326&"
-            f"BBOX={bbox_str}&"
-            f"WIDTH={width_px}&HEIGHT={height_px}&"
-            f"LAYERS={basemap_layer}&"
-            "STYLES=&"
-            "FORMAT=JPEG&"
+def _add_icgc_basemap_to_plotly(fig, data):
+    """Add ICGC basemap as background image to plotly figure."""
+    icgc_wms_url, bounds = _get_icgc_basemap_url(data)
+    response = requests.get(icgc_wms_url)
+    img = Image.open(BytesIO(response.content))
+    fig.add_layout_image(
+        dict(
+            source=img,
+            xref="x",
+            yref="y",
+            x=bounds[0],
+            y=bounds[3],
+            sizex=(bounds[2] - bounds[0]),
+            sizey=(bounds[3] - bounds[1]),
+            sizing="stretch",
+            layer="below"
         )
-        # logger.debug(f"ICGC WMS URL: {icgc_wms_url}")
-        response = requests.get(icgc_wms_url)
-        response.raise_for_status()
-        img = Image.open(BytesIO(response.content))
-
-        # Plot image on graph
-        ax.imshow(
-            img,
-            extent=[bounds[0], bounds[2], bounds[3], bounds[1]],
-            origin='lower',
-            alpha=1.0
+    )
+    fig.update_layout(
+        xaxis=dict(
+            range=[bounds[0], bounds[2]],
+            title="Longitude",
+            gridcolor='rgba(0,0,0,0.08)',
+            gridwidth=1,
+        ),
+        yaxis=dict(
+            range=[bounds[1], bounds[3]],
+            title="Latitude",
+            scaleanchor="x",
+            scaleratio=1,
+            gridcolor='rgba(0,0,0,0.08)',
+            gridwidth=1,
         )
-    except Exception as e:
-        logger.warning(f"ICGC basemap failed: {e}")
+    )
+    return True
 
 def _get_data_bounds(data):
     """Get the geographic bounds from the xarray dataset."""
-    try:
-        # Get coordinate arrays from the data
-        if hasattr(data, 'x') and hasattr(data, 'y'):
-            x_coords = data.x.values
-            y_coords = data.y.values
-        elif hasattr(data, 'longitude') and hasattr(data, 'latitude'):
-            x_coords = data.longitude.values
-            y_coords = data.latitude.values
-        elif hasattr(data, 'lon') and hasattr(data, 'lat'):
-            x_coords = data.lon.values
-            y_coords = data.lat.values
-        else:
-            logger.warning("Could not find coordinate arrays in data")
-            return None
-            
-        # Calculate bounds
-        lon_min, lon_max = float(x_coords.min()), float(x_coords.max())
-        lat_min, lat_max = float(y_coords.min()), float(y_coords.max())
-        bounds = [lon_min, lat_min, lon_max, lat_max]
-
-        return bounds
-        
-    except Exception as e:
-        logger.error(f"Error calculating data bounds: {e}")
-        return None
+    # Get coordinate arrays from the data
+    x_coords = data.x.values
+    y_coords = data.y.values
+    lon_min, lon_max = float(x_coords.min()), float(x_coords.max())
+    lat_min, lat_max = float(y_coords.min()), float(y_coords.max())
+    bounds = [lon_min, lat_min, lon_max, lat_max]
+    return bounds
 
 
 def create_dual_trend_spatial_map(results: Dict[str, List[Dict]], 
@@ -120,9 +128,7 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     
     Returns:
         Path to the saved visualization file
-    """
-    logger.info(f"Creating greening/browning visualization for {municipality_name}")
-    
+    """    
     # Setup output
     output_dir = Path(output_directory)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -207,27 +213,6 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     ax.set_aspect('equal', adjustable='box')   
     ax.autoscale(tight=True)
     
-    # Text box with statistics
-    stats_text = []
-    if 'greening' in trend_counts and 'browning' in trend_counts:
-        inc_count = trend_counts['greening']
-        dec_count = trend_counts['browning']
-        total = inc_count + dec_count
-        if total > 0:
-            inc_pct = (inc_count / total) * 100
-            dec_pct = (dec_count / total) * 100
-            stats_text.extend([
-                f"Greening: {inc_pct:.1f}% ({inc_count:,} pixels)",
-                f"Browning: {dec_pct:.1f}% ({dec_count:,} pixels)",
-                f"Ratio (Greening/Browning): {inc_count/dec_count:.2f}" if dec_count > 0 else "Ratio: ∞"
-            ])
-    
-    if stats_text:
-        textstr = '\n'.join(stats_text)
-        props = dict(boxstyle='round', facecolor='white', alpha=0.8)
-        ax.text(0.02, 0.02, textstr, transform=ax.transAxes, fontsize=10,
-                verticalalignment='bottom', bbox=props)
-    
     plt.tight_layout()  
     plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
@@ -236,46 +221,218 @@ def create_dual_trend_spatial_map(results: Dict[str, List[Dict]],
     return str(output_file)
 
 
+def create_interactive_temporal_trend_map(results: Dict[str, List[Dict]], 
+                                         data: Any, 
+                                         municipality_name: str,
+                                         output_directory: str) -> str:
+    """
+    Create an interactive 2D map showing yearly NDVI changes for each cluster with a time slider.
+    
+    Args:
+        results: Dictionary with 'greening' and 'browning' trend results
+        data: xarray Dataset with coordinate and temporal information
+        municipality_name: Name of the municipality
+        output_directory: Directory to save the visualization
+    
+    Returns:
+        Path to the saved interactive HTML file
+    """        
+    # Setup output
+    output_dir = Path(output_directory)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"interactive_temporal_trends_{municipality_name.replace(' ', '_')}.html"
+    output_file = output_dir / filename
+    
+    # Extract time coordinates (years)
+    time_coords = data.time.values.tolist()
+        
+    # Prepare data for all clusters and all years
+    cluster_data = []
+    cluster_id = 0
+    
+    # Process both greening and browning clusters
+    for trend_type in ['greening', 'browning']:
+
+        cubes = results[trend_type]
+        
+        for cube_idx, cube in enumerate(cubes):
+            pixels = _get_pixels_safely(cube)
+            if not pixels:
+                continue
+                
+            # Get NDVI profile for this cluster - use mean_temporal_profile from segmentation
+            ndvi_profile = None
+            for key in ['mean_temporal_profile', 'ndvi_profile', 'ndvi_time_series']:
+                profile = cube.get(key, None)
+                if profile is not None:
+                    if hasattr(profile, 'tolist'):
+                        ndvi_profile = profile.tolist()
+                    elif hasattr(profile, '__len__') and len(profile) > 0:
+                        ndvi_profile = list(profile)
+                    break
+            
+            if not ndvi_profile or len(ndvi_profile) != len(time_coords):
+                logger.debug(f"Cluster {cube_idx}: Skipping cluster - NDVI profile length {len(ndvi_profile) if ndvi_profile else 0} != time coords length {len(time_coords)}, available keys: {list(cube.keys())}")
+                continue
+            
+            # Calculate year-over-year NDVI changes
+            ndvi_changes = []
+            for i in range(1, len(ndvi_profile)):
+                change = ndvi_profile[i] - ndvi_profile[i-1]
+                ndvi_changes.append(change)
+            
+            # Convert pixels to lat/lon
+            for y_coord, x_coord in pixels:
+                try:
+                    lat, lon = _convert_pixel_to_latlon(data, y_coord, x_coord)
+                    if lat is None or lon is None:
+                        logger.debug(f"Could not convert coordinates ({y_coord}, {x_coord}) to lat/lon")
+                        continue
+                except Exception as e:
+                    logger.debug(f"Error converting coordinates ({y_coord}, {x_coord}): {e}")
+                    continue
+                
+                # Create data point for each year (except first year)
+                for year_idx, change in enumerate(ndvi_changes):
+                    year = time_coords[year_idx + 1]  # +1 because change is relative to previous year
+                    
+                    cluster_data.append({
+                        'cluster_id': cluster_id,
+                        'trend_type': trend_type,
+                        'lat': lat,
+                        'lon': lon,
+                        'year': year,
+                        'ndvi_change': change,
+                        'ndvi_value': ndvi_profile[year_idx + 1],
+                        'pixel_x': x_coord,
+                        'pixel_y': y_coord
+                    })
+            
+            cluster_id += 1
+        
+    # Create DataFrame
+    df = pd.DataFrame(cluster_data) 
+    fig = go.Figure()
+    
+    # Define color scale: red (-1) to white (0) to green (+1)
+    colorscale = [
+        [0.0, '#8B0000'],
+        [0.25, '#8B0000'],
+        [0.4, '#FF4500'],
+        [0.5, '#FFFFFF'],
+        [0.6, '#90EE90'],
+        [0.75, '#006400'],
+        [1.0, '#006400']
+    ]
+    
+    # Create traces for each year
+    years = sorted(df['year'].unique())
+    
+    for i, year in enumerate(years):
+        year_data = df[df['year'] == year]
+        
+        ndvi_changes_clamped = np.clip(year_data['ndvi_change'], -1, 1)
+        
+        fig.add_trace(
+            go.Scatter(
+                x=year_data['lon'],
+                y=year_data['lat'],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    symbol='square',
+                    color=ndvi_changes_clamped,
+                    colorscale=colorscale,
+                    cmin=-1,
+                    cmax=1,
+                    colorbar=dict(
+                        title="NDVI Change",
+                        tickmode="linear",
+                        tick0=-1,
+                        dtick=0.5,
+                        tickvals=[-1, -0.5, 0, 0.5, 1],
+                        ticktext=['-1.0 (Browning)', '-0.5', '0.0 (No Change)', '+0.5', '+1.0 (Greening)']
+                    ),
+                    opacity=0.8,
+                    line=dict(width=0.5, color='rgba(0,0,0,0.3)')
+                ),
+                text=[
+                    f"Cluster {row['cluster_id']}<br>"
+                    f"Type: {row['trend_type']}<br>"
+                    f"Year: {row['year']}<br>"
+                    f"NDVI Change: {row['ndvi_change']:.3f}<br>"
+                    f"NDVI Value: {row['ndvi_value']:.3f}<br>"
+                    f"Lat: {row['lat']:.4f}<br>"
+                    f"Lon: {row['lon']:.4f}<br>"
+                    for _, row in year_data.iterrows()
+                ],
+                hovertemplate='%{text}<extra></extra>',
+                name=f'Year {year}',
+                visible=(i == 0)
+            )
+        )
+    
+    # Create slider steps
+    steps = []
+    for i, year in enumerate(years):
+        step = dict(
+            method="update",
+            args=[{"visible": [False] * len(years)}],
+            label=str(year)
+        )
+        step["args"][0]["visible"][i] = True
+        steps.append(step)
+    
+    # Add slider
+    sliders = [dict(
+        active=0,
+        currentvalue={"prefix": "Year: "},
+        pad={"t": 50},
+        steps=steps
+    )]
+    
+    # Add ICGC basemap
+    _add_icgc_basemap_to_plotly(fig, data)
+    
+    # Update layout with title and slider
+    fig.update_layout(
+        title=dict(
+            text=f'Interactive Temporal NDVI Trends - {municipality_name}<br>'
+                 f'<sub>Use slider to navigate through years. Square pixels show NDVI change. Color indicates yearly change intensity.</sub>',
+            x=0.5,
+            font=dict(size=16)
+        ),
+        sliders=sliders,
+        height=800,
+        margin=dict(l=60, r=60, t=80, b=60)
+    )
+    
+    # Save
+    fig.write_html(
+        output_file,
+        include_plotlyjs='cdn',
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d'],
+            'scrollZoom': True
+        }
+    )
+    
+    logger.success(f"Interactive temporal trend map saved successfully")
+    return str(output_file)
+
+
 def _get_pixels_safely(cube: Dict) -> List[Tuple[int, int]]:
     """Safely extract pixels from cube data, handling different formats."""
-    # Check multiple possible field names
-    for field_name in ['pixels', 'coordinates']:
-        pixels = cube.get(field_name, [])
-        if pixels is not None and len(pixels) > 0:
-            break
-    else:
-        return []
-    
-    if isinstance(pixels, np.ndarray):
-        if pixels.size == 0:
-            return []
-        # Convert numpy array to list of tuples
-        if pixels.ndim == 1 and len(pixels) == 2:
-            return [tuple(pixels.tolist())]
-        elif pixels.ndim == 2:
-            return [tuple(row) for row in pixels.tolist()]
-        else:
-            return pixels.tolist()
-    elif isinstance(pixels, list):
-        return pixels
-    else:
-        return []
+    # Assume 'coordinates' is always present and is a list of (y, x) tuples
+    pixels = cube['coordinates']
+    return [tuple(p) for p in pixels]
 
 
 def _convert_pixel_to_latlon(data: Any, y_coord: int, x_coord: int) -> Tuple[float, float]:
     """Convert pixel coordinates to latitude/longitude using the same method as other modules."""
-    try:
-        # Get latitude and longitude from the dataset coordinates
-        lat = float(data.y.isel(y=y_coord).values)
-        lon = float(data.x.isel(x=x_coord).values)
-    except (IndexError, KeyError, AttributeError):
-        # Fallback: try alternative coordinate names
-        try:
-            lat = float(data.latitude.isel(latitude=y_coord).values) if 'latitude' in data.coords else float(data.lat.isel(lat=y_coord).values)
-            lon = float(data.longitude.isel(longitude=x_coord).values) if 'longitude' in data.coords else float(data.lon.isel(lon=x_coord).values)
-        except:
-            # If we can't convert, skip this pixel
-            logger.warning(f"Could not convert pixel coordinates ({y_coord}, {x_coord}) to lat/lon")
-            return None, None
-    
+    # Always use .y and .x
+    lat = float(data.y.isel(y=y_coord).values)
+    lon = float(data.x.isel(x=x_coord).values)
     return lat, lon

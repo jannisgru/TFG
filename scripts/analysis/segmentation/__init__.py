@@ -47,7 +47,7 @@ Example Usage:
     cubes = segment_vegetation(parameters=params)
 """
 from .core import VegetationSegmentationParameters, STCube
-from .visualization import StaticVisualization, InteractiveVisualization
+from .visualization import StaticVisualization, InteractiveVisualization, create_dual_trend_spatial_map, create_interactive_temporal_trend_map
 from .initializers import VegetationNDVIClusteringInitializer
 from .segmentation_main import segment_vegetation
 from .config_loader import get_config, get_parameter, reload_config
@@ -78,5 +78,7 @@ __all__ = [
     
     # Visualization
     'StaticVisualization',
-    'InteractiveVisualization'
+    'InteractiveVisualization',
+    'create_dual_trend_spatial_map',
+    'create_interactive_temporal_trend_map'
 ]

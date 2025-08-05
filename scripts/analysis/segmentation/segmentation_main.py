@@ -655,9 +655,18 @@ def segment_vegetation(netcdf_path: str = None,
     if len(trends_to_process) > 1:
         static_viz = StaticVisualization(output_directory=timestamped_output_dir)
         static_viz.create_combined_analysis_report(results, municipality_name)
-        
+
         # Create dual trend spatial map
         create_dual_trend_spatial_map(
+            results=results,
+            data=data,
+            municipality_name=municipality_name,
+            output_directory=timestamped_output_dir
+        )
+
+        # Create interactive temporal trend map
+        from .visualization.common import create_interactive_temporal_trend_map
+        create_interactive_temporal_trend_map(
             results=results,
             data=data,
             municipality_name=municipality_name,
