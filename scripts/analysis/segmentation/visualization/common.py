@@ -316,13 +316,13 @@ def create_interactive_temporal_trend_map(results: Dict[str, List[Dict]],
     
     # Define color scale: red (-1) to white (0) to green (+1)
     colorscale = [
-        [0.0, '#8B0000'],
-        [0.25, '#8B0000'],
-        [0.4, '#FF4500'],
+        [0.0, '#6B0000'],    # deep red
+        [0.37, '#8B0000'],   # still red
+        [0.47, '#D3D3D3'],  # light grey, just before white
         [0.5, '#FFFFFF'],
-        [0.6, '#90EE90'],
-        [0.75, '#006400'],
-        [1.0, '#006400']
+        [0.53, '#D3D3D3'],  # light grey, just after white
+        [0.63, '#006400'],   # dark green
+        [1.0, '#005800']     # dark green
     ]
     
     # Create traces for each year
