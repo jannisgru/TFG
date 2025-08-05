@@ -23,7 +23,6 @@ from .config_loader import get_config, get_section
 from .json_exporter import VegetationClusterJSONExporter
 from .spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
 from .visualization.visualization_3d import InteractiveVisualization
-from .visualization.common import create_dual_trend_spatial_map
 from .visualization.visualization_2d import StaticVisualization
 
 warnings.filterwarnings('ignore')
@@ -663,26 +662,27 @@ def segment_vegetation(netcdf_path: str = None,
         
         results[trend] = trend_results
     
-    # Create combined analysis report in the timestamp folder if processing multiple trends
+    # Create combined analysis report and visualizations if processing multiple trends
     if len(trends_to_process) > 1:
         static_viz = StaticVisualization(output_directory=timestamped_output_dir)
         static_viz.create_combined_analysis_report(results, municipality_name)
 
-        # Create dual trend spatial map
-        create_dual_trend_spatial_map(
+        # Create common visualizations using CommonVisualization class
+        from .visualization.common import CommonVisualization
+        common_viz = CommonVisualization(output_directory=timestamped_output_dir)
+        
+        # Create spatial distribution map with cluster numbering
+        common_viz.create_spatial_distribution_map(
             results=results,
             data=data,
-            municipality_name=municipality_name,
-            output_directory=timestamped_output_dir
+            municipality_name=municipality_name
         )
-
+        
         # Create interactive temporal trend map
-        from .visualization.common import create_interactive_temporal_trend_map
-        create_interactive_temporal_trend_map(
+        common_viz.create_interactive_temporal_trend_map(
             results=results,
             data=data,
-            municipality_name=municipality_name,
-            output_directory=timestamped_output_dir
+            municipality_name=municipality_name
         )
     
     return results

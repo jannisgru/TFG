@@ -107,12 +107,7 @@ class StaticVisualization:
         visualizations = {}
         
         try:
-            # 1. Spatial distribution map
-            spatial_file = f"spatial_distribution_{municipality_name.replace(' ', '_')}.png"
-            self.create_spatial_distribution_map(cubes, data, spatial_file, municipality_name)
-            visualizations["spatial_distribution"] = str(self.output_dir / spatial_file)
-
-            # 2. Interactive NDVI evolution plot (HTML)
+            # 1. Interactive NDVI evolution plot (HTML)
             ndvi_html_file = self.create_interactive_ndvi_evolution(cubes, data, municipality_name)
             if ndvi_html_file:
                 visualizations["ndvi_evolution_html"] = ndvi_html_file
@@ -344,102 +339,3 @@ class StaticVisualization:
             logger.error(f"Error creating interactive NDVI evolution plot: {str(e)}")
             traceback.print_exc()
             return None
-    
-    def create_spatial_distribution_map(self, cubes: List[Dict], data: Any, filename: str, municipality_name: str):
-        """Create a spatial distribution map showing all cluster pixel locations in lat/lon coordinates."""
-        
-        # Check if cubes have spatial data using the same method as other functions
-        valid_cubes = []
-        for cube in cubes:
-            pixels = self._get_pixels_safely(cube)
-            if len(pixels) > 0:
-                valid_cubes.append(cube)
-        
-        if not valid_cubes:
-            logger.warning("No spatial data available for mapping")
-            return
-        
-        # Create the plot
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-        fig.suptitle(f'Cluster Spatial Distribution - {municipality_name}', fontsize=16, fontweight='bold')
-        
-        # Define colors for different clusters
-        config = get_config()
-        cmap = plt.cm.get_cmap(config.color_map)
-        colors = cmap(np.linspace(0, 1, len(valid_cubes)))
-        
-        # Calculate pixel size in data coordinates
-        x_res = abs(float(data.x.values[1] - data.x.values[0]))
-        y_res = abs(float(data.y.values[1] - data.y.values[0]))
-        
-        # Process each cluster
-        for cluster_idx, cube in enumerate(valid_cubes):
-            pixels = self._get_pixels_safely(cube)
-            if not pixels:
-                continue
-                        
-            # Convert all pixels to lat/lon coordinates and create rectangles
-            for y_coord, x_coord in pixels:
-                lat, lon = self._convert_pixel_to_latlon(data, y_coord, x_coord)
-                if lat is not None and lon is not None:
-                    # Create a rectangle representing the 30x30m pixel
-                    # Rectangle centered at (lon, lat) with width=x_res, height=y_res
-                    rect = plt.Rectangle(
-                        (lon - x_res/2, lat - y_res/2),  # Bottom-left corner
-                        x_res,  # Width
-                        y_res,  # Height
-                        facecolor=colors[cluster_idx % len(colors)],
-                        edgecolor='black',
-                        linewidth=0.1,
-                        alpha=0.7
-                    )
-                    ax.add_patch(rect)
-        
-        # Add legend by creating dummy scatter points
-        for cluster_idx, cube in enumerate(valid_cubes):
-            cluster_id = cube.get('id', cluster_idx) + 1
-            ax.scatter([], [], 
-                    color=colors[cluster_idx % len(colors)], 
-                    s=100, alpha=0.7, 
-                    label=f'Cluster {cluster_id}',
-                    marker='s')
-        
-        # Set labels and formatting
-        ax.set_xlabel('Longitude')
-        ax.set_ylabel('Latitude')
-        ax.set_title('Vegetation Cluster Pixel Locations (30x30m pixels)')
-        ax.grid(True, alpha=0.3)
-        
-        # Add legend
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        # Set equal aspect ratio to preserve geographic proportions
-        ax.set_aspect('equal', adjustable='box')
-        
-        # Auto-adjust the view to fit all data
-        ax.autoscale(tight=True)
-        
-        plt.tight_layout()
-        
-        # Save the plot
-        output_file = self.output_dir / filename
-        plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
-        plt.close()
-            
-    def _convert_pixel_to_latlon(self, data: Any, y_coord: int, x_coord: int) -> Tuple[float, float]:
-        """Convert pixel coordinates to latitude/longitude using the same method as json_exporter."""
-        try:
-            # Get latitude and longitude from the dataset coordinates
-            lat = float(data.y.isel(y=y_coord).values)
-            lon = float(data.x.isel(x=x_coord).values)
-        except (IndexError, KeyError, AttributeError):
-            # Fallback: try alternative coordinate names
-            try:
-                lat = float(data.latitude.isel(latitude=y_coord).values) if 'latitude' in data.coords else float(data.lat.isel(lat=y_coord).values)
-                lon = float(data.longitude.isel(longitude=x_coord).values) if 'longitude' in data.coords else float(data.lon.isel(lon=x_coord).values)
-            except:
-                # If we can't convert, skip this pixel
-                logger.warning(f"Could not convert pixel coordinates ({y_coord}, {x_coord}) to lat/lon")
-                return None, None
-        
-        return lat, lon
