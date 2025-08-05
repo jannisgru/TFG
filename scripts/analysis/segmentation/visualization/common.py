@@ -61,7 +61,7 @@ def _add_icgc_basemap(ax, data):
             "STYLES=&"
             "FORMAT=JPEG&"
         )
-        logger.debug(f"ICGC WMS URL: {icgc_wms_url}")
+        # logger.debug(f"ICGC WMS URL: {icgc_wms_url}")
         response = requests.get(icgc_wms_url)
         response.raise_for_status()
         img = Image.open(BytesIO(response.content))
