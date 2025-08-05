@@ -246,9 +246,12 @@ class VegetationClusterJSONExporter:
             # Convert pixel coordinates to latitude/longitude
             lat, lon = self._convert_pixel_to_latlon(data, y_coord, x_coord)
             
+            # Extract natural park information
+            natural_park_info = self._extract_natural_park_info(data, y_coord, x_coord)
+            
             # Create pixel information structure
             pixel_info = self._create_pixel_info_structure(
-                pixel_idx, lat, lon, pixel_ndvi_dict, pixel_ndvi_values, std_from_cluster
+                pixel_idx, lat, lon, pixel_ndvi_dict, pixel_ndvi_values, std_from_cluster, natural_park_info
             )
             
             cluster_info["cubes"].append(pixel_info)
@@ -327,13 +330,81 @@ class VegetationClusterJSONExporter:
         
         return lat, lon
     
+    def _extract_natural_park_info(self, data: xr.Dataset, y_coord: int, x_coord: int) -> Dict[str, Any]:
+        """Extract natural park information for a pixel coordinate."""
+        natural_info = {
+            "PEIN": None,
+            "XPN": None
+        }
+        
+        try:
+            # Check if natural park data exists in the dataset
+            if 'natural' in data.variables:
+                natural_data = data['natural']
+                
+                # Extract PEIN information
+                if 'park' in natural_data.dims and natural_data.shape[natural_data.dims.index('park')] >= 1:
+                    pein_data = natural_data.isel(park=0)  # PEIN is first in park dimension
+                    if y_coord < pein_data.shape[0] and x_coord < pein_data.shape[1]:
+                        pein_value = pein_data.isel(y=y_coord, x=x_coord).values
+                        
+                        # Handle numpy arrays and scalars properly
+                        if isinstance(pein_value, np.ndarray):
+                            if pein_value.size == 1:
+                                pein_value = pein_value.item()
+                            elif pein_value.size > 1:
+                                pein_value = pein_value.flat[0]  # Get first element safely
+                            else:
+                                pein_value = ""
+                        elif hasattr(pein_value, 'item'):
+                            pein_value = pein_value.item()
+                        
+                        if isinstance(pein_value, bytes):
+                            pein_value = pein_value.decode('utf-8')
+                        
+                        # Convert to string and check if not empty
+                        pein_str = str(pein_value).strip()
+                        if pein_str and pein_str != '' and pein_str != 'nan':
+                            natural_info["PEIN"] = pein_str
+                
+                # Extract XPN information
+                if 'park' in natural_data.dims and natural_data.shape[natural_data.dims.index('park')] >= 2:
+                    xpn_data = natural_data.isel(park=1)  # XPN is second in park dimension
+                    if y_coord < xpn_data.shape[0] and x_coord < xpn_data.shape[1]:
+                        xpn_value = xpn_data.isel(y=y_coord, x=x_coord).values
+                        
+                        # Handle numpy arrays and scalars properly
+                        if isinstance(xpn_value, np.ndarray):
+                            if xpn_value.size == 1:
+                                xpn_value = xpn_value.item()
+                            elif xpn_value.size > 1:
+                                xpn_value = xpn_value.flat[0]  # Get first element safely
+                            else:
+                                xpn_value = ""
+                        elif hasattr(xpn_value, 'item'):
+                            xpn_value = xpn_value.item()
+                        
+                        if isinstance(xpn_value, bytes):
+                            xpn_value = xpn_value.decode('utf-8')
+                        
+                        # Convert to string and check if not empty
+                        xpn_str = str(xpn_value).strip()
+                        if xpn_str and xpn_str != '' and xpn_str != 'nan':
+                            natural_info["XPN"] = xpn_str
+                            
+        except Exception as e:
+            self.logger.warning(f"Could not extract natural park info for pixel ({y_coord}, {x_coord}): {e}")
+        
+        return natural_info
+
     def _create_pixel_info_structure(self, 
                                    pixel_idx: int, 
                                    lat: float, 
                                    lon: float, 
                                    pixel_ndvi_dict: Dict, 
                                    pixel_ndvi_values: List,
-                                   std_from_cluster: Dict) -> Dict[str, Any]:
+                                   std_from_cluster: Dict,
+                                   natural_park_info: Dict) -> Dict[str, Any]:
         """Create the pixel information structure."""
         
         # Calculate pixel statistics (without mean_ndvi)
@@ -349,6 +420,7 @@ class VegetationClusterJSONExporter:
                 "longitude": lon
             },
             "cube_statistics": pixel_stats,
+            "natural_park_info": natural_park_info,
             "ndvi_time_series": pixel_ndvi_dict,
             "std_from_cluster_per_year": std_from_cluster
         }

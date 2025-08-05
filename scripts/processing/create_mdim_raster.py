@@ -12,16 +12,22 @@ NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation',
 BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_Sant_Feliu_de_Llobregat.nc"
+OUTPUT_FILE_NAME = "mdim_Sant_Marti.nc"
 START_YEAR = None   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = None       # Set to None to use config file value
 # Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
-FILTER_MUNICIPALITY = "Sant Feliu de Llobregat"  # e.g. "L'Eixample" or None
+FILTER_MUNICIPALITY = "Sant Martí"  # e.g. "L'Eixample" or None
+
+# Natural Parks configuration
+PEIN_SHAPEFILE = "data/boundaries/PEIN_clipped.shp"  # PEIN natural parks
+XPN_SHAPEFILE = "data/boundaries/XPN_clipped.shp"    # XPN natural parks
+INCLUDE_NATURAL_PARKS = True                         # Whether to include natural park data
 # ================================
 
 import warnings
 import numpy as np
+import pandas as pd
 import xarray as xr
 import rasterio
 import geopandas as gpd
@@ -70,6 +76,120 @@ def load_municipalities(boundaries_path):
     return gdf
 
 
+def load_natural_parks():
+    """Load natural parks data (PEIN and XPN)."""
+    natural_parks = {}
+    
+    if not INCLUDE_NATURAL_PARKS:
+        return natural_parks
+    
+    # Load PEIN data
+    pein_path = Path(PEIN_SHAPEFILE)
+    if pein_path.exists():
+        try:
+            pein_gdf = gpd.read_file(pein_path)
+            natural_parks['pein'] = pein_gdf
+            logger.info(f"Loaded PEIN data: {len(pein_gdf)} polygons")
+        except Exception as e:
+            logger.warning(f"Could not load PEIN data from {pein_path}: {e}")
+    else:
+        logger.warning(f"PEIN shapefile not found at {pein_path}")
+    
+    # Load XPN data
+    xpn_path = Path(XPN_SHAPEFILE)
+    if xpn_path.exists():
+        try:
+            xpn_gdf = gpd.read_file(xpn_path)
+            natural_parks['xpn'] = xpn_gdf
+            logger.info(f"Loaded XPN data: {len(xpn_gdf)} polygons")
+        except Exception as e:
+            logger.warning(f"Could not load XPN data from {xpn_path}: {e}")
+    else:
+        logger.warning(f"XPN shapefile not found at {xpn_path}")
+    
+    return natural_parks
+
+
+def create_natural_park_masks(src, natural_parks, out_transform, height, width):
+    """Create natural park rasters (PEIN and XPN) with attribute values."""
+    masks = {}
+    
+    if not INCLUDE_NATURAL_PARKS or not natural_parks:
+        return masks
+    
+    # Process PEIN
+    if 'pein' in natural_parks:
+        logger.info("Creating PEIN mask...")
+        pein_mask = np.full((height, width), "", dtype='<U20')  # String array for CODI_PEIN
+        
+        for _, row in natural_parks['pein'].iterrows():
+            try:
+                park_image, _ = mask(src, [row['geometry']], crop=False, 
+                                   all_touched=True, filled=False)
+                
+                # Extract clipped region
+                park_clipped = park_image[0][
+                    int((out_transform[5] - src.transform[5]) / src.transform[4]):
+                    int((out_transform[5] - src.transform[5]) / src.transform[4]) + height,
+                    int((out_transform[2] - src.transform[2]) / src.transform[0]):
+                    int((out_transform[2] - src.transform[2]) / src.transform[0]) + width
+                ]
+                
+                # Resize if needed
+                if park_clipped.shape != (height, width):
+                    scale_y = height / park_clipped.shape[0]
+                    scale_x = width / park_clipped.shape[1]
+                    park_clipped = zoom(park_clipped, (scale_y, scale_x), order=0)
+                
+                # Set CODI_PEIN value where park intersects
+                codi_pein = str(row.get('CODI_PEIN', ''))
+                if codi_pein:
+                    pein_mask[~park_clipped.mask] = codi_pein
+                    
+            except Exception as e:
+                logger.warning(f"Could not process PEIN polygon {row.get('CODI_PEIN', 'Unknown')}: {e}")
+                continue
+        
+        masks['pein'] = pein_mask
+    
+    # Process XPN
+    if 'xpn' in natural_parks:
+        logger.info("Creating XPN mask...")
+        xpn_mask = np.full((height, width), "", dtype='<U50')  # String array for ACRONIM
+        
+        for _, row in natural_parks['xpn'].iterrows():
+            try:
+                park_image, _ = mask(src, [row['geometry']], crop=False, 
+                                   all_touched=True, filled=False)
+                
+                # Extract clipped region
+                park_clipped = park_image[0][
+                    int((out_transform[5] - src.transform[5]) / src.transform[4]):
+                    int((out_transform[5] - src.transform[5]) / src.transform[4]) + height,
+                    int((out_transform[2] - src.transform[2]) / src.transform[0]):
+                    int((out_transform[2] - src.transform[2]) / src.transform[0]) + width
+                ]
+                
+                # Resize if needed
+                if park_clipped.shape != (height, width):
+                    scale_y = height / park_clipped.shape[0]
+                    scale_x = width / park_clipped.shape[1]
+                    park_clipped = zoom(park_clipped, (scale_y, scale_x), order=0)
+                
+                # Set ACRONIM value where park intersects
+                acronim = str(row.get('ACRONIM', ''))
+                if acronim:
+                    xpn_mask[~park_clipped.mask] = acronim
+                    
+            except Exception as e:
+                logger.warning(f"Could not process XPN polygon {row.get('ACRONIM', 'Unknown')}: {e}")
+                continue
+        
+        masks['xpn'] = xpn_mask
+    
+    return masks
+
+
 def create_municipality_masks(src, boundaries_gdf, out_transform, height, width):
     """Create municipality ID raster with individual masks."""
     municipality_ids = np.zeros((height, width), dtype=np.int16)
@@ -102,7 +222,7 @@ def create_municipality_masks(src, boundaries_gdf, out_transform, height, width)
     return municipality_ids, municipality_names
 
 
-def load_and_clip_landsat_file(file_path, year, boundaries_gdf):
+def load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_masks=None, municipality_masks=None):
     """Load a Landsat file and clip it to boundaries."""
     with rasterio.open(file_path) as src:
         # Clip to boundaries
@@ -130,17 +250,45 @@ def load_and_clip_landsat_file(file_path, year, boundaries_gdf):
             }
         )
         
-        # Add municipality masks (only if processing multiple municipalities)
-        if FILTER_MUNICIPALITY is None:
-            municipality_ids, municipality_names = create_municipality_masks(
-                src, boundaries_gdf, out_transform, height, width
-            )
-            
+        # Add pre-computed municipality masks (only if processing multiple municipalities)
+        if municipality_masks is not None:
+            municipality_ids, municipality_names = municipality_masks
             ds['municipality_id'] = (['y', 'x'], municipality_ids)
             ds.attrs.update({
                 'municipality_names': municipality_names,
                 'n_municipalities': len(municipality_names)
             })
+        
+        # Add pre-computed natural park masks as grouped variable
+        if natural_park_masks:
+            # Create a list to store natural park data and park names
+            natural_data = []
+            park_names = []
+            
+            if 'pein' in natural_park_masks:
+                natural_data.append(natural_park_masks['pein'])
+                park_names.append('pein')
+            
+            if 'xpn' in natural_park_masks:
+                natural_data.append(natural_park_masks['xpn'])
+                park_names.append('xpn')
+            
+            if natural_data:
+                # Stack the natural park data into a multi-dimensional array
+                natural_array = np.stack(natural_data, axis=0)
+                ds['natural'] = (['park', 'y', 'x'], natural_array)
+                
+                # Add coordinate for park dimension
+                ds = ds.assign_coords(park=park_names)
+                
+                # Add attributes
+                ds['natural'].attrs = {
+                    'long_name': 'Natural Parks Data',
+                    'description': 'Natural park identifiers for PEIN (CODI_PEIN) and XPN (ACRONIM)',
+                    'source': 'PEIN_clipped.shp, XPN_clipped.shp',
+                    'parks': ', '.join(park_names),
+                    'nodata_value': ''
+                }
         
         return ds
 
@@ -226,6 +374,18 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     else:
         logger.info(f"Processing {len(boundaries_gdf)} municipalities")
     
+    # Load natural parks data
+    natural_parks = load_natural_parks()
+    if natural_parks:
+        park_info = []
+        if 'pein' in natural_parks:
+            park_info.append(f"PEIN: {len(natural_parks['pein'])} polygons")
+        if 'xpn' in natural_parks:
+            park_info.append(f"XPN: {len(natural_parks['xpn'])} polygons")
+        logger.info(f"Natural parks loaded: {', '.join(park_info)}")
+    else:
+        logger.info("No natural parks data loaded")
+    
     # Find available files
     available_files = []
     available_years = []
@@ -241,12 +401,37 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
 
     logger.info(f"Found {len(available_files)} files for years: {min(available_years)}-{max(available_years)}")
     
+    # Create masks once before processing all files (optimization)
+    natural_park_masks = None
+    municipality_masks = None
+    
+    # Use the first file to get the spatial reference for creating masks
+    with rasterio.open(available_files[0]) as first_src:
+        # Get the clipped transform and dimensions
+        _, out_transform = mask(first_src, boundaries_gdf.geometry, crop=True)
+        clipped_bounds = mask(first_src, boundaries_gdf.geometry, crop=True)[0]
+        height, width = clipped_bounds.shape[1], clipped_bounds.shape[2]
+        
+        # Create municipality masks once (only if processing multiple municipalities)
+        if FILTER_MUNICIPALITY is None:
+            logger.info("Creating municipality masks (one-time operation)...")
+            municipality_masks = create_municipality_masks(
+                first_src, boundaries_gdf, out_transform, height, width
+            )
+        
+        # Create natural park masks once
+        if natural_parks:
+            logger.info("Creating natural park masks (one-time operation)...")
+            natural_park_masks = create_natural_park_masks(
+                first_src, natural_parks, out_transform, height, width
+            )
+    
     # Process files
     datasets = []
     logger.info("Loading and clipping files...")
     for file_path, year in tqdm(zip(available_files, available_years), total=len(available_files), desc="Processing files"):
         try:
-            ds = load_and_clip_landsat_file(file_path, year, boundaries_gdf)
+            ds = load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_masks, municipality_masks)
             # Convert landsat data to desired output type
             ds['landsat'] = ds['landsat'].astype(OUTPUT_DTYPE)
             datasets.append(ds)
@@ -296,6 +481,14 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
             'classification_scheme': 'Class 0: -1 to 0 (Water/Bare/Built-up), Class 1: 0 to 0.1 (Very sparse vegetation), Class 2: 0.1 to 0.2 (Sparse vegetation), Class 3: 0.2 to 0.4 (Moderate vegetation), Class 4: 0.4 to 0.6 (Dense vegetation), Class 5: 0.6 to 1 (Very dense vegetation)',
             'nodata_value': -1
         }
+    
+    # Calculate derived variables string including natural parks
+    derived_vars = ['NDVI']
+    if 'ndvi_class' in combined_ds:
+        derived_vars.append('NDVI_CLASS')
+    if 'natural' in combined_ds:
+        derived_vars.append('NATURAL_PARKS')
+    
     combined_ds.attrs.update({
         'title': f'AMB Landsat Time Series - {FILTER_MUNICIPALITY or "All Municipalities"}',
         'description': f'Landsat Collection 2 Level 2 data for {FILTER_MUNICIPALITY or f"all {len(boundaries_gdf)} AMB municipalities"} ({min(available_years)}-{max(available_years)})',
@@ -307,7 +500,8 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
         'municipality_names': FILTER_MUNICIPALITY or ', '.join(boundaries_gdf['municipality_name'].tolist()),
         'n_years': len(available_years),
         'bands': ', '.join(BAND_NAMES),
-        'derived_variables': 'NDVI' + (', NDVI_CLASS' if 'ndvi_class' in combined_ds else ''),
+        'derived_variables': ', '.join(derived_vars),
+        'natural_parks_included': 'true' if INCLUDE_NATURAL_PARKS else 'false',
         'created_date': datetime.now().isoformat(),
         'individual_analysis_supported': 'true',
         'nodata_handling': 'NaN for invalid values'
@@ -331,13 +525,18 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
         encoding['ndvi_class'] = {'dtype': 'int8', 'zlib': True, 'complevel': 6}
     if 'municipality_id' in combined_ds:
         encoding['municipality_id'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}
+    if 'natural' in combined_ds:
+        encoding['natural'] = {'dtype': 'S50'}  # Fixed string encoding for natural parks
     
     combined_ds.to_netcdf(output_file, engine='netcdf4', encoding=encoding)
     
     # Save municipality mapping (only if processing multiple municipalities)
-    if FILTER_MUNICIPALITY is None and 'municipality_id' in combined_ds:
-        municipality_info = boundaries_gdf['municipality_name'].copy()
-        municipality_info['municipality_id'] = range(1, len(municipality_info) + 1)
+    if FILTER_MUNICIPALITY is None and municipality_masks is not None:
+        municipality_ids, municipality_names = municipality_masks
+        municipality_info = pd.DataFrame({
+            'municipality_name': municipality_names,
+            'municipality_id': range(1, len(municipality_names) + 1)
+        })
         municipality_info_file = processed_data_path / "municipality_mapping.csv"
         municipality_info.to_csv(municipality_info_file, index=False, encoding='utf-8')
         logger.info(f"Municipality mapping saved to: {municipality_info_file}")
