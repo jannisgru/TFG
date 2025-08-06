@@ -12,12 +12,12 @@ NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation',
 BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_Sant_Marti.nc"
+OUTPUT_FILE_NAME = "mdim_Sant_Feliu_de_Llobregat.nc"
 START_YEAR = None   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = None       # Set to None to use config file value
 # Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
-FILTER_MUNICIPALITY = "Sant Martí"  # e.g. "L'Eixample" or None
+FILTER_MUNICIPALITY = "Sant Feliu de Llobregat"  # e.g. "L'Eixample" or None
 
 # Natural Parks configuration
 PEIN_SHAPEFILE = "data/boundaries/PEIN_clipped.shp"  # PEIN natural parks
@@ -111,7 +111,7 @@ def load_natural_parks():
 
 
 def create_natural_park_masks(src, natural_parks, out_transform, height, width):
-    """Create natural park rasters (PEIN and XPN) with attribute values."""
+    """Create natural park rasters (PEIN and XPN) with integer codes."""
     masks = {}
     
     if not INCLUDE_NATURAL_PARKS or not natural_parks:
@@ -120,9 +120,9 @@ def create_natural_park_masks(src, natural_parks, out_transform, height, width):
     # Process PEIN
     if 'pein' in natural_parks:
         logger.info("Creating PEIN mask...")
-        pein_mask = np.full((height, width), "", dtype='<U20')  # String array for CODI_PEIN
+        pein_mask = np.zeros((height, width), dtype=np.int16)  # Integer array for PEIN codes
         
-        for _, row in natural_parks['pein'].iterrows():
+        for idx, (_, row) in enumerate(natural_parks['pein'].iterrows(), 1):
             try:
                 park_image, _ = mask(src, [row['geometry']], crop=False, 
                                    all_touched=True, filled=False)
@@ -141,10 +141,8 @@ def create_natural_park_masks(src, natural_parks, out_transform, height, width):
                     scale_x = width / park_clipped.shape[1]
                     park_clipped = zoom(park_clipped, (scale_y, scale_x), order=0)
                 
-                # Set CODI_PEIN value where park intersects
-                codi_pein = str(row.get('CODI_PEIN', ''))
-                if codi_pein:
-                    pein_mask[~park_clipped.mask] = codi_pein
+                # Set integer code where park intersects
+                pein_mask[~park_clipped.mask] = idx
                     
             except Exception as e:
                 logger.warning(f"Could not process PEIN polygon {row.get('CODI_PEIN', 'Unknown')}: {e}")
@@ -155,9 +153,9 @@ def create_natural_park_masks(src, natural_parks, out_transform, height, width):
     # Process XPN
     if 'xpn' in natural_parks:
         logger.info("Creating XPN mask...")
-        xpn_mask = np.full((height, width), "", dtype='<U50')  # String array for ACRONIM
+        xpn_mask = np.zeros((height, width), dtype=np.int16)  # Integer array for XPN codes
         
-        for _, row in natural_parks['xpn'].iterrows():
+        for idx, (_, row) in enumerate(natural_parks['xpn'].iterrows(), 1):
             try:
                 park_image, _ = mask(src, [row['geometry']], crop=False, 
                                    all_touched=True, filled=False)
@@ -176,10 +174,8 @@ def create_natural_park_masks(src, natural_parks, out_transform, height, width):
                     scale_x = width / park_clipped.shape[1]
                     park_clipped = zoom(park_clipped, (scale_y, scale_x), order=0)
                 
-                # Set ACRONIM value where park intersects
-                acronim = str(row.get('ACRONIM', ''))
-                if acronim:
-                    xpn_mask[~park_clipped.mask] = acronim
+                # Set integer code where park intersects
+                xpn_mask[~park_clipped.mask] = idx
                     
             except Exception as e:
                 logger.warning(f"Could not process XPN polygon {row.get('ACRONIM', 'Unknown')}: {e}")
@@ -284,10 +280,11 @@ def load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_mas
                 # Add attributes
                 ds['natural'].attrs = {
                     'long_name': 'Natural Parks Data',
-                    'description': 'Natural park identifiers for PEIN (CODI_PEIN) and XPN (ACRONIM)',
+                    'description': 'Natural park identifiers using integer codes for PEIN and XPN',
                     'source': 'PEIN_clipped.shp, XPN_clipped.shp',
                     'parks': ', '.join(park_names),
-                    'nodata_value': ''
+                    'nodata_value': 0,
+                    'units': 'code'
                 }
         
         return ds
@@ -526,9 +523,39 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     if 'municipality_id' in combined_ds:
         encoding['municipality_id'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}
     if 'natural' in combined_ds:
-        encoding['natural'] = {'dtype': 'S50'}  # Fixed string encoding for natural parks
+        encoding['natural'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}  # Integer encoding for natural parks
     
     combined_ds.to_netcdf(output_file, engine='netcdf4', encoding=encoding)
+    
+    # Save natural parks mapping if included
+    if INCLUDE_NATURAL_PARKS and natural_parks:
+        park_mappings = []
+        
+        if 'pein' in natural_parks:
+            for idx, (_, row) in enumerate(natural_parks['pein'].iterrows(), 1):
+                park_mappings.append({
+                    'park_type': 'pein',
+                    'park_code': idx,
+                    'original_code': row.get('CODI_PEIN', ''),
+                    'name': row.get('NOM', ''),
+                    'description': f"PEIN park: {row.get('CODI_PEIN', '')}"
+                })
+        
+        if 'xpn' in natural_parks:
+            for idx, (_, row) in enumerate(natural_parks['xpn'].iterrows(), 1):
+                park_mappings.append({
+                    'park_type': 'xpn', 
+                    'park_code': idx,
+                    'original_code': row.get('ACRONIM', ''),
+                    'name': row.get('NOM', ''),
+                    'description': f"XPN park: {row.get('ACRONIM', '')}"
+                })
+        
+        if park_mappings:
+            park_mapping_df = pd.DataFrame(park_mappings)
+            park_mapping_file = processed_data_path / "natural_parks_mapping.csv"
+            park_mapping_df.to_csv(park_mapping_file, index=False, encoding='utf-8')
+            logger.info(f"Natural parks mapping saved to: {park_mapping_file}")
     
     # Save municipality mapping (only if processing multiple municipalities)
     if FILTER_MUNICIPALITY is None and municipality_masks is not None:
