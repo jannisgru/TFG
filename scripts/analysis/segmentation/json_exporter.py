@@ -170,6 +170,9 @@ class VegetationClusterJSONExporter:
                 min_year = time_coords[min_idx]
                 max_year = time_coords[max_idx]
 
+        # Calculate overall cluster standard deviation
+        overall_std = self._calculate_overall_cluster_std(cube)
+
         summary = {
             "area_cubes": int(cube.get('area', len(coordinates))),
             "min_ndvi": float(min_ndvi) if min_ndvi is not None else None,
@@ -177,7 +180,8 @@ class VegetationClusterJSONExporter:
             "max_ndvi": float(max_ndvi) if max_ndvi is not None else None,
             "max_ndvi_year": int(max_year) if max_year is not None else None,
             "trend_score": self._safe_float_conversion(cube.get('trend_score')),
-            "temporal_variance": self._safe_float_conversion(cube.get('temporal_variance'))
+            "temporal_variance": self._safe_float_conversion(cube.get('temporal_variance')),
+            "overall_cluster_std": overall_std
         }
 
         return {
@@ -189,6 +193,33 @@ class VegetationClusterJSONExporter:
             "cubes": []
         }
     
+    def _calculate_overall_cluster_std(self, cube: Dict) -> float:
+        """
+        Calculate overall standard deviation for the cluster across all pixels and all years.
+        """
+        try:
+            # Get individual pixel NDVI profiles
+            pixel_ndvi_profiles = cube.get('ndvi_profiles', [])
+            if pixel_ndvi_profiles is None or len(pixel_ndvi_profiles) == 0:
+                return None
+            
+            if isinstance(pixel_ndvi_profiles, np.ndarray):
+                # Flatten the entire array and filter out NaN values
+                all_values = pixel_ndvi_profiles.flatten()
+                valid_values = all_values[~np.isnan(all_values)]
+                
+                if len(valid_values) > 1:
+                    return float(np.std(valid_values))
+                else:
+                    return None
+            else:
+                self.logger.warning(f"Unexpected ndvi_profiles type: {type(pixel_ndvi_profiles)}")
+                return None
+                
+        except Exception as e:
+            self.logger.warning(f"Could not calculate overall cluster std: {e}")
+            return None
+
     def _safe_float_conversion(self, value) -> float:
         """Safely convert a value to float, handling NaN and None values."""
         if value is not None and not np.isnan(value):
