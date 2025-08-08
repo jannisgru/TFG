@@ -15,7 +15,6 @@ from typing import List, Dict, Tuple, Union
 from loguru import logger
 import warnings
 from ..config_loader import get_config
-from ..core.cube import STCube
 from tqdm import tqdm
 import time
 import random
@@ -66,7 +65,7 @@ class InteractiveVisualization:
         """Check if cube has both valid pixels and NDVI data."""
         return len(self._get_pixels_safely(cube)) > 0 and len(self._get_ndvi_profile(cube)) > 0
     
-    def create_all_visualizations(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str], 
+    def create_all_visualizations(self, cubes: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str], 
                                 municipality_name: str = "Unknown") -> Dict[str, str]:
         """Create 3D spatiotemporal visualization for vegetation clusters."""        
         processed_cubes = self._process_cube_data(cubes, data)
@@ -125,36 +124,27 @@ class InteractiveVisualization:
             logger.error(f"✗ Error in 3D visualization: {str(e)}")
             return {}
     
-    def _process_cube_data(self, cubes: Union[List[STCube], List[Dict]], data: Union[xr.Dataset, str]) -> List[Dict]:
+    def _process_cube_data(self, cubes: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str]) -> List[Dict]:
         """Process cube data into a consistent format for visualization."""
         processed_cubes = []
         time_length = len(data.time) if hasattr(data, 'dims') and 'time' in data.dims else 1
         
         for i, cube in enumerate(cubes):
-            if isinstance(cube, STCube):
-                # Process STCube objects
-                cube_dict = {k: getattr(cube, k, default) for k, default in [
-                    ('id', i), ('pixels', []), ('area', 0), ('ndvi_profile', []), 
-                    ('temporal_extent', (0, 0)), ('heterogeneity', 0.0)
-                ]}
-                cube_dict.update({
-                    'mean_ndvi': np.mean(cube_dict['ndvi_profile']) if cube_dict['ndvi_profile'] else 0.5,
-                })
-            else:
-                # Process dictionary cubes
-                pixels = self._get_pixels_safely(cube)
-                ndvi_profile = self._get_ndvi_profile(cube)
-                cube_dict = {
-                    'id': cube.get('id', i),
-                    'pixels': pixels,
-                    'area': cube.get('area', cube.get('size', len(pixels))),
-                    'ndvi_profile': ndvi_profile,
-                    'mean_ndvi': cube.get('mean_ndvi', np.mean(ndvi_profile) if ndvi_profile else 0.5),
-                    'temporal_extent': cube.get('temporal_extent', (0, time_length)),
-                    'heterogeneity': cube.get('heterogeneity', cube.get('temporal_variance', 0.0)),
-                    'vegetation_type': cube.get('vegetation_type', 'Unknown'),
-                    'trend_score': cube.get('trend_score', 0.0)
-                }
+            # Since STCube is no longer used, all cubes are dictionaries
+            # Process dictionary cubes
+            pixels = self._get_pixels_safely(cube)
+            ndvi_profile = self._get_ndvi_profile(cube)
+            cube_dict = {
+                'id': cube.get('id', i),
+                'pixels': pixels,
+                'area': cube.get('area', cube.get('size', len(pixels))),
+                'ndvi_profile': ndvi_profile,
+                'mean_ndvi': cube.get('mean_ndvi', np.mean(ndvi_profile) if ndvi_profile else 0.5),
+                'temporal_extent': cube.get('temporal_extent', (0, time_length)),
+                'heterogeneity': cube.get('heterogeneity', cube.get('temporal_variance', 0.0)),
+                'vegetation_type': cube.get('vegetation_type', 'Unknown'),
+                'trend_score': cube.get('trend_score', 0.0)
+            }
             processed_cubes.append(cube_dict)
         
         return processed_cubes

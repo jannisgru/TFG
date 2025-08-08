@@ -5,9 +5,7 @@ A streamlined implementation of spatiotemporal cube segmentation focused specifi
 on vegetation analysis using NDVI clustering with local spatial constraints.
 
 Package Structure:
-- core/: Core data structures (VegetationSegmentationParameters, STCube, CubeCollection)
 - visualization/: Static and interactive visualization modules
-- initializers/: Clustering initialization strategies
 - Main modules: segmentation_main, config_loader, json_exporter
 
 Main Function:
@@ -21,12 +19,13 @@ Features:
 
 Example Usage:
     # Vegetation NDVI clustering segmentation with config
-    from segmentation import segment_vegetation, VegetationSegmentationParameters, get_config
+    from segmentation import segment_vegetation, get_config
     
     # Use default config values
     cubes = segment_vegetation()
     
     # Or customize specific parameters
+    from segmentation.segmentation_main import VegetationSegmentationParameters
     params = VegetationSegmentationParameters(
         max_spatial_distance=10,
         min_vegetation_ndvi=0.4,
@@ -45,10 +44,8 @@ Example Usage:
     
     cubes = segment_vegetation(parameters=params)
 """
-from .core import VegetationSegmentationParameters, STCube
 from .visualization import StaticVisualization, InteractiveVisualization, CommonVisualization
-from .initializers import VegetationNDVIClusteringInitializer
-from .segmentation_main import segment_vegetation
+from .segmentation_main import segment_vegetation, VegetationSegmentationParameters
 from .config_loader import get_config, get_parameter, reload_config
 from .json_exporter import VegetationClusterJSONExporter
 
@@ -58,8 +55,6 @@ __all__ = [
     
     # Core classes
     'VegetationSegmentationParameters',
-    'STCube',
-    'VegetationNDVIClusteringInitializer',
     
     # Export functionality
     'VegetationClusterJSONExporter',

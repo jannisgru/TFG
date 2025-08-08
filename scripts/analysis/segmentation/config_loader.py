@@ -28,9 +28,9 @@ class SegmentationConfig:
     ndvi_trend_filter: Optional[str]
     
     # Clustering parameters (defined in YAML)
-    eps_search_attempts: int
-    min_samples_ratio: float
     spatial_weight: float
+    random_state: int
+    n_init: int
     
     # Processing parameters (defined in YAML)
     chunk_size: int
@@ -157,9 +157,9 @@ class ConfigLoader:
         # Clustering parameters (required from YAML)
         cluster_params = config_data.get('clustering', {})
         flattened.update({
-            'eps_search_attempts': cluster_params['eps_search_attempts'],
-            'min_samples_ratio': cluster_params['min_samples_ratio'],
             'spatial_weight': cluster_params['spatial_weight'],
+            'random_state': cluster_params['random_state'],
+            'n_init': cluster_params['n_init'],
         })
         
         # Processing parameters (required from YAML)

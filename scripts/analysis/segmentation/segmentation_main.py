@@ -65,6 +65,7 @@ class VegetationSegmenter:
     
     def __init__(self, parameters: VegetationSegmentationParameters):
         self.params = parameters
+        self.config = get_config()
     
     def segment_vegetation(self, netcdf_path: str, 
                           municipality_name,
@@ -303,7 +304,11 @@ class VegetationSegmenter:
         if n_clusters < 2:
             n_clusters = 2
         
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        kmeans = KMeans(
+            n_clusters=n_clusters, 
+            random_state=self.config.random_state,
+            n_init=self.config.n_init
+        )
         cluster_labels = kmeans.fit_predict(combined_features)
         
         # Apply spatial constraints - filter clusters based on spatial distance

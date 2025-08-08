@@ -16,23 +16,23 @@ This package segments satellite NDVI time series into spatially and temporally c
 2. **Vegetation Filtering**: Selects pixels with mean NDVI above threshold and sufficient temporal variance
 3. **Clustering**: 
    - Combines NDVI time series and spatial coordinates, weighted by `temporal_weight` and `spatial_weight`
-   - Uses DBSCAN to cluster pixels into NDVI-similar and spatially close groups
-   - Number of clusters controlled by `n_clusters` (if set), otherwise determined automatically
+   - Uses K-means to cluster pixels into NDVI-similar and spatially close groups
+   - Number of clusters controlled by `n_clusters` parameter
 4. **Spatial Constraints**: Ensures clusters remain spatially coherent within `max_spatial_distance`
 5. **Export & Visualization**: Results exported as JSON with static (Matplotlib) and interactive (Plotly) visualizations
 
-## Clustering Algorithm (DBSCAN)
+## Clustering Algorithm (K-means)
 
-The core segmentation uses DBSCAN clustering on combined NDVI and spatial features:
+The core segmentation uses K-means clustering on combined NDVI and spatial features:
 
 1. **Feature Construction**: Each pixel gets a feature vector combining NDVI time series and spatial coordinates (x, y)
-2. **DBSCAN Clustering**: 
-   - Density-based clustering that groups pixels close in feature space
-   - Finds arbitrarily shaped clusters automatically
-   - Marks outliers/noise pixels
-3. **Parameters**: Controlled by `min_samples_ratio` (minimum cluster size) and `eps_search_attempts` (neighborhood radius optimization)
+2. **K-means Clustering**: 
+   - Partitional clustering that groups pixels into k clusters based on feature similarity
+   - Minimizes within-cluster sum of squares
+   - Requires pre-specified number of clusters (`n_clusters`)
+3. **Parameters**: Number of clusters controlled by `n_clusters`, with spatial coherence enforced via `max_spatial_distance`
 
-DBSCAN is ideal for flexible, shape-adaptive clustering without requiring pre-specified cluster counts.
+K-means is efficient for large datasets and produces compact, spherical clusters with consistent sizes.
 
 ## Key Parameters
 
@@ -46,14 +46,15 @@ Configure in `segment_config.yaml`:
 | `min_vegetation_ndvi` | Minimum NDVI threshold for vegetation |
 | `ndvi_variance_threshold` | Minimum NDVI variance to include pixel |
 | `temporal_weight` | Weight for NDVI vs. spatial features |
-| `n_clusters` | Target cluster count (0/None = automatic) |
+| `n_clusters` | Target cluster count (required for K-means) |
 
 ### Clustering Parameters
 | Parameter | Description |
 |-----------|-------------|
 | `spatial_weight` | Weight for spatial coordinates in feature space |
-| `min_samples_ratio` | Minimum samples ratio for DBSCAN |
-| `eps_search_attempts` | Attempts to find optimal DBSCAN epsilon |
+| `temporal_weight` | Weight for temporal vs spatial features (0-1) |
+| `random_state` | Random seed for K-means reproducibility |
+| `n_init` | Number of K-means initializations |
 
 
 ## File Structure
@@ -61,20 +62,14 @@ Configure in `segment_config.yaml`:
 ```
 segmentation/
 ├── __init__.py
-├── core/
-│   ├── __init__.py
-│   ├── base.py                # Parameter dataclass
-│   └── cube.py                # STCube and CubeCollection
 ├── visualization/
 │   ├── __init__.py
-│   ├── static.py              # Matplotlib static plots
-│   └── interactive.py         # Plotly interactive 3D plots
-├── initializers/
-│   ├── __init__.py
-│   └── ndvi_cluster_initializer.py  # NDVI clustering logic
+│   ├── visualization_2d.py    # Matplotlib static plots
+│   ├── visualization_3d.py    # Plotly interactive 3D plots
+│   └── common.py              # Common visualization utilities
 ├── config_loader.py           # YAML config loader
 ├── json_exporter.py           # JSON export utilities
-├── segmentation_main.py       # Main pipeline entry point
+├── segmentation_main.py       # Main pipeline entry point (contains VegetationSegmentationParameters)
 ├── segment_config.yaml        # Main YAML config
 └── README.md
 ```
@@ -89,8 +84,8 @@ segmentation/
 
 - **`temporal_weight` vs `spatial_weight`**: Balance NDVI similarity vs. spatial proximity
 - **`max_spatial_distance`**: Higher values allow more spatial spread
-- **`n_clusters`**: Set to 0/None for automatic detection
-- **`min_cube_size`**: Prevents tiny/noisy clusters
+- **`n_clusters`**: Must be specified for K-means; determines final number of clusters
+- **`min_cube_size`**: Prevents tiny/noisy clusters through post-processing
 - **`ndvi_variance_threshold`**: Filters static vegetation
 
 ## Data Requirements
