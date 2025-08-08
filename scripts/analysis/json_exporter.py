@@ -603,7 +603,6 @@ class VegetationClusterJSONExporter:
             with open(json_filepath, 'w', encoding='utf-8') as f:
                 json.dump(cluster_data_converted, f, indent=json_indent, ensure_ascii=False)
             
-            self.logger.info(f"Combined cluster data exported to: {json_filepath}")
             return json_filepath
             
         except Exception as e:

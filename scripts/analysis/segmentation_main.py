@@ -273,7 +273,7 @@ class VegetationSegmenter:
         # Perform DBSCAN clustering
         dbscan = DBSCAN(
             eps=self.params.eps,
-            min_pts=self.params.min_pts
+            min_samples=self.params.min_pts
         )
         cluster_labels = dbscan.fit_predict(combined_features)
         
