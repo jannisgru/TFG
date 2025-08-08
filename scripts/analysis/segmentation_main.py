@@ -124,8 +124,8 @@ class VegetationSegmenter:
             logger.info("4. Creating vegetation ST-cubes...")
             vegetation_cubes = self.create_vegetation_cubes(clusters)
             
-            # Step 5: Export cluster data to JSON
-            if vegetation_cubes:
+            # Step 5: Export cluster data to JSON (only for single trend processing)
+            if vegetation_cubes and not is_dual_trend_processing:
                 config = get_config()
                 if config.enable_json_export:
                     logger.info("5. Exporting cluster data to JSON...")
@@ -149,6 +149,10 @@ class VegetationSegmenter:
                     )
                 else:
                     logger.info("5. JSON export disabled in configuration")
+            elif is_dual_trend_processing:
+                logger.info("5. Individual JSON export skipped (will be done in combined export)")
+            else:
+                logger.info("5. No vegetation clusters found for JSON export")
             
             # Step 6: Generate visualizations if requested
             if create_visualizations and vegetation_cubes:
@@ -616,6 +620,28 @@ def segment_vegetation(netcdf_path: str = None,
     
     # Create combined analysis report and visualizations if processing multiple trends
     if len(trends_to_process) > 1:
+        # Create combined JSON export first
+        if config.enable_json_export and data is not None:
+            logger.info("Creating combined JSON export...")
+            # Get configuration parameters for export
+            config_params = {
+                "min_cube_size": parameters.min_cube_size,
+                "max_spatial_distance": parameters.max_spatial_distance,
+                "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
+                "eps": parameters.eps,
+                "min_samples": parameters.min_samples,
+                "ndvi_variance_threshold": parameters.ndvi_variance_threshold,
+                "temporal_weight": parameters.temporal_weight,
+                "netcdf_path": netcdf_path,
+                "municipality_name": municipality_name
+            }
+            
+            # Export combined results to main output directory
+            json_exporter = VegetationClusterJSONExporter()
+            json_exporter.export_combined_clusters_to_json(
+                results, data, timestamped_output_dir, municipality_name, config_params
+            )
+        
         static_viz = StaticVisualization(output_directory=timestamped_output_dir)
         static_viz.create_combined_analysis_report(results, municipality_name)
 
@@ -636,6 +662,28 @@ def segment_vegetation(netcdf_path: str = None,
             data=data,
             municipality_name=municipality_name
         )
+    else:
+        # For single trend processing, still create combined JSON export for consistency
+        if config.enable_json_export and data is not None:
+            logger.info("Creating combined JSON export for single trend...")
+            # Get configuration parameters for export
+            config_params = {
+                "min_cube_size": parameters.min_cube_size,
+                "max_spatial_distance": parameters.max_spatial_distance,
+                "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
+                "eps": parameters.eps,
+                "min_samples": parameters.min_samples,
+                "ndvi_variance_threshold": parameters.ndvi_variance_threshold,
+                "temporal_weight": parameters.temporal_weight,
+                "netcdf_path": netcdf_path,
+                "municipality_name": municipality_name
+            }
+            
+            # Export combined results to main output directory
+            json_exporter = VegetationClusterJSONExporter()
+            json_exporter.export_combined_clusters_to_json(
+                results, data, timestamped_output_dir, municipality_name, config_params
+            )
     
     return results
 

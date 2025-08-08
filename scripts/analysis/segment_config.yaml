@@ -9,9 +9,9 @@
 segmentation:
   # Core algorithm parameters
   min_cube_size: 5                    # Minimum pixels per vegetation cluster (enforced)
-  max_spatial_distance: 50               # Maximum pixel distance for spatial clustering (pixels)
+  max_spatial_distance: 100               # Maximum pixel distance for spatial clustering (pixels)
   min_vegetation_ndvi: 0.2             # Minimum NDVI threshold to consider pixels as vegetation (0-1)
-  ndvi_variance_threshold: 0.005        # Minimum NDVI temporal variance to include pixels (0-1)
+  ndvi_variance_threshold: 0.003        # Minimum NDVI temporal variance to include pixels (0-1)
   ndvi_trend_filter:              # Filter for NDVI trends ('greening', 'browning', or null for both separately)
 
 # ==============================================================================
@@ -20,18 +20,18 @@ segmentation:
 clustering:
   # DBSCAN clustering parameters
   eps: 0.15                            # DBSCAN eps: maximum distance between samples to be neighbors
-  min_samples: 5                       # DBSCAN min_samples: minimum samples in neighborhood to form cluster
+  min_samples: 10                       # DBSCAN min_samples: minimum samples in neighborhood to form cluster
   temporal_weight: 0.05                  # Weight for temporal vs spatial features (0-1, 0=spatial only)
-  spatial_weight: 0.4                  # Weight for spatial coordinates in feature space (0-1)
+  spatial_weight: 0.3                  # Weight for spatial coordinates in feature space (0-1)
 
 # ==============================================================================
 # DATA PATHS
 # ==============================================================================
 data:
   # File paths
-  netcdf_path: "data/processed/mdim_Sant_Feliu_de_Llobregat.nc"    # Input NetCDF file
-  municipality: "Sant Feliu de Llobregat"                               # Municipality to analyze
-  output_dir: "outputs/Sant_Feliu_de_Llobregat"              # Output directory
+  netcdf_path: "data/processed/mdim_Sant_Marti.nc"    # Input NetCDF file
+  municipality: "Sant Martí"                               # Municipality to analyze
+  output_dir: "outputs/Sant_Marti"              # Output directory
 
 # ==============================================================================
 # EXPORT SETTINGS

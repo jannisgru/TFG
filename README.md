@@ -52,7 +52,7 @@ The Google Earth Engine script for data acquisition is located in `scripts/proce
 
 ## Documentation
 
-- [Segmentation Module Documentation](https://jannisgru.github.io/TFG/scripts/analysis/segmentation/)
+- [Segmentation Module Documentation](https://jannisgru.github.io/TFG/scripts/analysis/)
 
 ---
 

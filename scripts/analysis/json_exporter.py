@@ -1,7 +1,7 @@
 """
 JSON Export Module for Vegetation Segmentation Results
 
-Handles export of vegetation cluster/cube analysis results to structured JSON files for downstream analysis, visualization, 
+Handles export of vegetation cluster/trace analysis results to structured JSON files for downstream analysis, visualization, 
 and reproducibility. Supports metadata, NDVI profiles, pixel-level data, and config export.
 """
 
@@ -32,7 +32,7 @@ class VegetationClusterJSONExporter:
         self.logger = logger
     
     def export_clusters_to_json(self, 
-                               vegetation_cubes: List[Dict], 
+                               vegetation_traces: List[Dict], 
                                data: xr.Dataset, 
                                output_dir: str, 
                                municipality_name: str,
@@ -41,7 +41,7 @@ class VegetationClusterJSONExporter:
         Export cluster information to a structured JSON file for future analysis and visualization.
         
         Args:
-            vegetation_cubes: List of cluster dictionaries
+            vegetation_traces: List of cluster dictionaries
             data: Original xarray dataset
             output_dir: Output directory path
             municipality_name: Name of the municipality
@@ -59,16 +59,85 @@ class VegetationClusterJSONExporter:
         
         # Prepare the main data structure
         cluster_data = self._create_metadata_structure(
-            municipality_name, vegetation_cubes, time_coords, include_pixels, parameters
+            municipality_name, vegetation_traces, time_coords, include_pixels, parameters
         )
         
         # Process each cluster
-        for i, cube in enumerate(vegetation_cubes):            
-            cluster_info = self._process_cluster(cube, data, time_coords, include_pixels, i)
+        for i, trace in enumerate(vegetation_traces):            
+            cluster_info = self._process_cluster(trace, data, time_coords, include_pixels, i)
             cluster_data["clusters"].append(cluster_info)
         
         # Save to JSON file
         json_filepath = self._save_json_file(cluster_data, output_dir, municipality_name, json_indent)
+        
+        return str(json_filepath)
+    
+    def export_combined_clusters_to_json(self, 
+                                       results: Dict[str, List[Dict]], 
+                                       data: xr.Dataset, 
+                                       output_dir: str, 
+                                       municipality_name: str,
+                                       parameters: Dict) -> str:
+        """
+        Export combined cluster information for both greening and browning trends to a single JSON file.
+        
+        Args:
+            results: Dictionary with 'greening' and 'browning' keys containing cluster lists
+            data: Original xarray dataset
+            output_dir: Output directory path
+            municipality_name: Name of the municipality
+            parameters: Configuration parameters used for segmentation
+            
+        Returns:
+            Path to the exported JSON file
+        """        
+        # Get configuration settings
+        include_pixels = self.config.include_pixel_level_data
+        json_indent = self.config.json_indent
+        
+        # Extract time coordinates (years)
+        time_coords = self._extract_time_coordinates(data)
+        
+        # Calculate total clusters across all trends
+        total_clusters = sum(len(clusters) for clusters in results.values())
+        
+        # Prepare the main data structure for combined export
+        cluster_data = {
+            "metadata": {
+                "municipality": municipality_name,
+                "export_date": datetime.now().isoformat(),
+                "total_clusters": total_clusters,
+                "years": time_coords,
+                "trends": {
+                    trend: {
+                        "cluster_count": len(clusters),
+                        "trend_type": trend
+                    } for trend, clusters in results.items()
+                },
+                "config_parameters": parameters
+            },
+            "trends": {}
+        }
+        
+        # Process each trend
+        for trend_type, vegetation_traces in results.items():
+            trend_data = {
+                "metadata": {
+                    "trend_type": trend_type,
+                    "cluster_count": len(vegetation_traces)
+                },
+                "clusters": []
+            }
+            
+            # Process each cluster for this trend
+            for i, trace in enumerate(vegetation_traces):            
+                cluster_info = self._process_cluster(trace, data, time_coords, include_pixels, i)
+                trend_data["clusters"].append(cluster_info)
+            
+            cluster_data["trends"][trend_type] = trend_data
+        
+        # Save to JSON file with combined naming
+        json_filepath = self._save_combined_json_file(cluster_data, output_dir, municipality_name, json_indent)
         
         return str(json_filepath)
     
@@ -84,7 +153,7 @@ class VegetationClusterJSONExporter:
     
     def _create_metadata_structure(self, 
                                  municipality_name: str, 
-                                 vegetation_cubes: List[Dict], 
+                                 vegetation_traces: List[Dict], 
                                  time_coords: List[int], 
                                  include_pixels: bool, 
                                  parameters: Dict) -> Dict[str, Any]:
@@ -93,7 +162,7 @@ class VegetationClusterJSONExporter:
             "metadata": {
                 "municipality": municipality_name,
                 "export_date": datetime.now().isoformat(),
-                "total_clusters": len(vegetation_cubes),
+                "total_clusters": len(vegetation_traces),
                 "years": time_coords,
                 "config_parameters": parameters
             },
@@ -101,18 +170,18 @@ class VegetationClusterJSONExporter:
         }
     
     def _process_cluster(self, 
-                        cube: Dict, 
+                        trace: Dict, 
                         data: xr.Dataset, 
                         time_coords: List[int], 
                         include_pixels: bool, 
                         cluster_index: int) -> Dict[str, Any]:
         """Process a single cluster and return its JSON representation."""
         # Get cluster pixel coordinates and NDVI profiles
-        coordinates, pixel_ndvi_profiles = self._extract_cluster_data(cube)
+        coordinates, pixel_ndvi_profiles = self._extract_cluster_data(trace)
         # Initialize cluster info structure, pass time_coords
-        cluster_info = self._create_cluster_info_structure(cube, coordinates, cluster_index, time_coords)
+        cluster_info = self._create_cluster_info_structure(trace, coordinates, cluster_index, time_coords)
         # Add temporal profile data
-        self._add_temporal_profile_data(cluster_info, cube, time_coords)
+        self._add_temporal_profile_data(cluster_info, trace, time_coords)
         # Process individual pixels if enabled
         if include_pixels and coordinates and pixel_ndvi_profiles:
             self._process_cluster_pixels(
@@ -120,11 +189,11 @@ class VegetationClusterJSONExporter:
             )
         return cluster_info
     
-    def _extract_cluster_data(self, cube: Dict) -> tuple:
+    def _extract_cluster_data(self, trace: Dict) -> tuple:
         """Extract coordinates and NDVI profiles from cluster data."""
         
         # Get cluster pixel coordinates
-        coordinates = cube.get('coordinates', [])
+        coordinates = trace.get('coordinates', [])
         if hasattr(coordinates, 'tolist'):
             coordinates = coordinates.tolist()
         elif isinstance(coordinates, np.ndarray):
@@ -133,7 +202,7 @@ class VegetationClusterJSONExporter:
             coordinates = list(coordinates)
         
         # Get individual pixel NDVI profiles
-        pixel_ndvi_profiles = cube.get('ndvi_profiles', [])
+        pixel_ndvi_profiles = trace.get('ndvi_profiles', [])
         if hasattr(pixel_ndvi_profiles, 'tolist'):
             pixel_ndvi_profiles = pixel_ndvi_profiles.tolist()
         elif isinstance(pixel_ndvi_profiles, np.ndarray):
@@ -141,10 +210,10 @@ class VegetationClusterJSONExporter:
         
         return coordinates, pixel_ndvi_profiles
     
-    def _create_cluster_info_structure(self, cube: Dict, coordinates: List, cluster_index: int, time_coords: List[int]) -> Dict[str, Any]:
+    def _create_cluster_info_structure(self, trace: Dict, coordinates: List, cluster_index: int, time_coords: List[int]) -> Dict[str, Any]:
         """Create the basic cluster information structure."""
         # Get NDVI profile for min/max year lookup
-        ndvi_profile = cube.get('mean_temporal_profile', [])
+        ndvi_profile = trace.get('mean_temporal_profile', [])
         if hasattr(ndvi_profile, 'tolist'):
             ndvi_profile = ndvi_profile.tolist()
         elif isinstance(ndvi_profile, np.ndarray):
@@ -171,35 +240,36 @@ class VegetationClusterJSONExporter:
                 max_year = time_coords[max_idx]
 
         # Calculate overall cluster standard deviation
-        overall_std = self._calculate_overall_cluster_std(cube)
+        overall_std = self._calculate_overall_cluster_std(trace)
 
         summary = {
-            "area_cubes": int(cube.get('area', len(coordinates))),
+            "area_traces": int(trace.get('area', len(coordinates))),
+            "trace_count": len(coordinates),  # Number of individual traces/pixels in the cluster
             "min_ndvi": float(min_ndvi) if min_ndvi is not None else None,
             "min_ndvi_year": int(min_year) if min_year is not None else None,
             "max_ndvi": float(max_ndvi) if max_ndvi is not None else None,
             "max_ndvi_year": int(max_year) if max_year is not None else None,
-            "trend_score": self._safe_float_conversion(cube.get('trend_score')),
-            "temporal_variance": self._safe_float_conversion(cube.get('temporal_variance')),
+            "trend_score": self._safe_float_conversion(trace.get('trend_score')),
+            "temporal_variance": self._safe_float_conversion(trace.get('temporal_variance')),
             "overall_cluster_std": overall_std
         }
 
         return {
-            "cluster_id": int(cube.get('id', cluster_index)) + 1,
+            "cluster_id": int(trace.get('id', cluster_index)) + 1,
             "summary": summary,
             "temporal_profile": {
                 "mean_ndvi_per_year": {}
             },
-            "cubes": []
+            "traces": []
         }
     
-    def _calculate_overall_cluster_std(self, cube: Dict) -> float:
+    def _calculate_overall_cluster_std(self, trace: Dict) -> float:
         """
         Calculate overall standard deviation for the cluster across all pixels and all years.
         """
         try:
             # Get individual pixel NDVI profiles
-            pixel_ndvi_profiles = cube.get('ndvi_profiles', [])
+            pixel_ndvi_profiles = trace.get('ndvi_profiles', [])
             if pixel_ndvi_profiles is None or len(pixel_ndvi_profiles) == 0:
                 return None
             
@@ -226,11 +296,11 @@ class VegetationClusterJSONExporter:
             return float(value)
         return None
     
-    def _add_temporal_profile_data(self, cluster_info: Dict, cube: Dict, time_coords: List[int]):
+    def _add_temporal_profile_data(self, cluster_info: Dict, trace: Dict, time_coords: List[int]):
         """Add temporal profile data to cluster info."""
         
-        # Get cluster-level NDVI temporal profile (mean across all cubes)
-        ndvi_profile = cube.get('mean_temporal_profile', [])
+        # Get cluster-level NDVI temporal profile (mean across all traces)
+        ndvi_profile = trace.get('mean_temporal_profile', [])
         if hasattr(ndvi_profile, 'tolist'):
             ndvi_profile = ndvi_profile.tolist()
         elif isinstance(ndvi_profile, np.ndarray):
@@ -285,7 +355,7 @@ class VegetationClusterJSONExporter:
                 pixel_idx, lat, lon, pixel_ndvi_dict, pixel_ndvi_values, std_from_cluster, natural_park_info
             )
             
-            cluster_info["cubes"].append(pixel_info)
+            cluster_info["traces"].append(pixel_info)
 
     def _calculate_cluster_means_per_year(self, pixel_ndvi_profiles: List, time_coords: List[int]) -> List[float]:
         """Calculate cluster mean NDVI for each year."""
@@ -445,12 +515,12 @@ class VegetationClusterJSONExporter:
             del pixel_stats['mean_ndvi']
         
         pixel_info = {
-            "cube_id": pixel_idx,
+            "trace_id": pixel_idx,
             "coordinates": {
                 "latitude": lat,
                 "longitude": lon
             },
-            "cube_statistics": pixel_stats,
+            "trace_statistics": pixel_stats,
             "natural_park_info": natural_park_info,
             "ndvi_time_series": pixel_ndvi_dict,
             "std_from_cluster_per_year": std_from_cluster
@@ -513,6 +583,33 @@ class VegetationClusterJSONExporter:
             
         except Exception as e:
             self.logger.error(f"Failed to export cluster data to JSON: {e}")
+            raise
+    
+    def _save_combined_json_file(self, 
+                                cluster_data: Dict, 
+                                output_dir: str, 
+                                municipality_name: str, 
+                                json_indent: int) -> Path:
+        """Save combined cluster data to JSON file in main output directory."""
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        json_filename = f"vegetation_clusters_combined_{municipality_name.replace(' ', '_')}.json"
+        json_filepath = output_path / json_filename
+        
+        try:
+            # Convert all numpy types to native Python types before JSON serialization
+            cluster_data_converted = self._convert_numpy_types(cluster_data)
+            
+            with open(json_filepath, 'w', encoding='utf-8') as f:
+                json.dump(cluster_data_converted, f, indent=json_indent, ensure_ascii=False)
+            
+            self.logger.info(f"Combined cluster data exported to: {json_filepath}")
+            return json_filepath
+            
+        except Exception as e:
+            self.logger.error(f"Failed to export combined cluster data to JSON: {e}")
             raise
     
     def _convert_numpy_types(self, obj):
