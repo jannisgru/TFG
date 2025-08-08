@@ -2,7 +2,7 @@
 """
 2D Visualization Module for Vegetation ST-Cube Segmentation Results
 
-Provides static 2D visualizations using Matplotlib for the results of vegetation-focused spatiotemporal cube segmentation. Includes spatial maps and temporal NDVI analyses for clusters/cubes.
+Provides static 2D visualizations using Matplotlib for the results of vegetation-focused spatiotemporal trace segmentation. Includes spatial maps and temporal NDVI analyses for clusters/traces.
 """
 
 import numpy as np
@@ -36,11 +36,11 @@ class StaticVisualization:
         config = get_config()
         self.colors = plt.cm.get_cmap(config.color_map)(np.linspace(0, 1, 12))
     
-    def _get_pixels_safely(self, cube: Dict) -> List[Tuple[int, int]]:
-        """Safely extract pixels from cube data, handling different formats."""
+    def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
+        """Safely extract pixels from trace data, handling different formats."""
         # Check multiple possible field names
         for field_name in ['pixels', 'coordinates']:
-            pixels = cube.get(field_name, [])
+            pixels = trace.get(field_name, [])
             if pixels is not None and len(pixels) > 0:
                 break
         else:
@@ -61,10 +61,10 @@ class StaticVisualization:
         else:
             return []
     
-    def _get_ndvi_profile(self, cube: Dict) -> List[float]:
+    def _get_ndvi_profile(self, trace: Dict) -> List[float]:
         """Extract NDVI temporal profile, checking multiple possible keys."""
         for key in ['ndvi_profile', 'mean_temporal_profile', 'ndvi_time_series']:
-            profile = cube.get(key, None)
+            profile = trace.get(key, None)
             if profile is not None:
                 if hasattr(profile, 'tolist'):
                     return profile.tolist()
@@ -72,34 +72,34 @@ class StaticVisualization:
                     return list(profile)
         return []
 
-    def _has_valid_ndvi_profile(self, cube: Dict) -> bool:
-        """Check if cube has a valid NDVI profile."""
-        return len(self._get_ndvi_profile(cube)) > 0
+    def _has_valid_ndvi_profile(self, trace: Dict) -> bool:
+        """Check if trace has a valid NDVI profile."""
+        return len(self._get_ndvi_profile(trace)) > 0
 
-    def _has_valid_pixels(self, cube: Dict) -> bool:
-        """Check if cube has valid pixel data."""
-        return len(self._get_pixels_safely(cube)) > 0
+    def _has_valid_pixels(self, trace: Dict) -> bool:
+        """Check if trace has valid pixel data."""
+        return len(self._get_pixels_safely(trace)) > 0
 
-    def _calculate_summary_statistics(self, cubes: List[Dict], municipality_name: str) -> Dict[str, Any]:
+    def _calculate_summary_statistics(self, traces: List[Dict], municipality_name: str) -> Dict[str, Any]:
         """Calculate summary statistics for the clustering results."""
-        total_area = sum(cube.get('area', 0) for cube in cubes)
-        valid_ndvis = [cube.get('mean_ndvi', 0) for cube in cubes if cube.get('mean_ndvi') is not None and not np.isnan(cube.get('mean_ndvi', 0))]
+        total_area = sum(trace.get('area', 0) for trace in traces)
+        valid_ndvis = [trace.get('mean_ndvi', 0) for trace in traces if trace.get('mean_ndvi') is not None and not np.isnan(trace.get('mean_ndvi', 0))]
         mean_ndvi = np.mean(valid_ndvis) if valid_ndvis else 0
-        largest_cube = max(cubes, key=lambda x: x.get('area', 0)) if cubes else {}
-        highest_ndvi_cube = max(cubes, key=lambda x: x.get('mean_ndvi', 0) if x.get('mean_ndvi') is not None and not np.isnan(x.get('mean_ndvi', 0)) else 0) if cubes else {}
+        largest_trace = max(traces, key=lambda x: x.get('area', 0)) if traces else {}
+        highest_ndvi_trace = max(traces, key=lambda x: x.get('mean_ndvi', 0) if x.get('mean_ndvi') is not None and not np.isnan(x.get('mean_ndvi', 0)) else 0) if traces else {}
         return {
             'municipality_name': municipality_name,
-            'total_clusters': len(cubes),
+            'total_clusters': len(traces),
             'total_area_pixels': total_area,
-            'mean_cluster_size': total_area/len(cubes) if cubes else 0,
+            'mean_cluster_size': total_area/len(traces) if traces else 0,
             'overall_mean_ndvi': mean_ndvi,
-            'largest_cluster_size': largest_cube.get('area', 0),
-            'highest_ndvi_value': highest_ndvi_cube.get('mean_ndvi', 0),
+            'largest_cluster_size': largest_trace.get('area', 0),
+            'highest_ndvi_value': highest_ndvi_trace.get('mean_ndvi', 0),
             'clusters_with_valid_ndvi': len(valid_ndvis)
         }
         
     def create_all_static_visualizations(self, 
-                                       cubes: List[Dict], 
+                                       traces: List[Dict], 
                                        data: Any, 
                                        municipality_name: str = "Unknown") -> Dict[str, str]:
         """Create all static visualizations for vegetation clusters."""
@@ -108,7 +108,7 @@ class StaticVisualization:
         
         try:
             # 1. Interactive NDVI evolution plot (HTML)
-            ndvi_html_file = self.create_interactive_ndvi_evolution(cubes, data, municipality_name)
+            ndvi_html_file = self.create_interactive_ndvi_evolution(traces, data, municipality_name)
             if ndvi_html_file:
                 visualizations["ndvi_evolution_html"] = ndvi_html_file
 
@@ -128,12 +128,12 @@ class StaticVisualization:
         
         # Calculate summary statistics for each trend
         trend_stats = {}
-        for trend, cubes in results.items():
-            trend_stats[trend] = self._calculate_summary_statistics(cubes, municipality_name)
+        for trend, traces in results.items():
+            trend_stats[trend] = self._calculate_summary_statistics(traces, municipality_name)
         
         # Configuration parameters section
         param_sections = [
-            ("Segmentation Parameters", ['min_cube_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold']),
+            ("Segmentation Parameters", ['min_cluster_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold']),
             ("Clustering Parameters", ['eps', 'min_samples', 'temporal_weight', 'spatial_weight']),
             ("Data Parameters", ['netcdf_path', 'municipalities_data', 'municipality', 'output_dir']),
             ("Analysis Parameters", ['chunk_size', 'max_pixels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
@@ -188,7 +188,7 @@ class StaticVisualization:
         
         return str(report_file)
     
-    def create_interactive_ndvi_evolution(self, cubes: List[Dict], data: Any, municipality_name: str) -> Optional[str]:
+    def create_interactive_ndvi_evolution(self, traces: List[Dict], data: Any, municipality_name: str) -> Optional[str]:
         """Create an interactive HTML plot of NDVI evolution over time with toggleable cluster lines."""
 
         try:
@@ -225,11 +225,11 @@ class StaticVisualization:
                     time_labels = [str(t) for t in time_axis]
             
             # Fallback: create year-based time axis like interactive visualization
-            if time_axis is None and cubes:
+            if time_axis is None and traces:
                 # Find the longest NDVI profile to determine time axis length
                 max_length = 0
-                for cube in cubes:
-                    ndvi_profile = self._get_ndvi_profile(cube)
+                for trace in traces:
+                    ndvi_profile = self._get_ndvi_profile(trace)
                     if ndvi_profile:
                         max_length = max(max_length, len(ndvi_profile))
                 
@@ -238,7 +238,7 @@ class StaticVisualization:
                     time_axis = list(range(max_length))
                     time_labels = [1984 + i for i in range(max_length)]
                 else:
-                    logger.warning("No valid NDVI profiles found in cubes")
+                    logger.warning("No valid NDVI profiles found in traces")
                     return None
             
             if time_axis is None:
@@ -253,8 +253,8 @@ class StaticVisualization:
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', 
                      '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'] * 10  # Repeat colors if needed
             
-            for idx, cube in enumerate(cubes):
-                ndvi_profile = self._get_ndvi_profile(cube)
+            for idx, trace in enumerate(traces):
+                ndvi_profile = self._get_ndvi_profile(trace)
                 
                 if ndvi_profile and len(ndvi_profile) > 0:
                     # Ensure time axis and NDVI values have same length
@@ -263,8 +263,8 @@ class StaticVisualization:
                     y_vals = ndvi_profile[:min_length]
                     
                     # Create cluster label
-                    cluster_id = cube.get('id', idx) + 1
-                    cluster_size = cube.get('area', cube.get('size', len(self._get_pixels_safely(cube))))
+                    cluster_id = trace.get('id', idx) + 1
+                    cluster_size = trace.get('area', trace.get('size', len(self._get_pixels_safely(trace))))
                     label = f"Cluster {cluster_id} (size: {cluster_size})"
                     
                     # Add trace with toggle capability

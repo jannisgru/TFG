@@ -3,7 +3,7 @@
 3D Interactive Visualization Module for Vegetation ST-Cube Segmentation Results
 
 This module provides interactive 3D visualizations using Plotly for the results of 
-vegetation-focused spatiotemporal cube segmentation.
+vegetation-focused spatiotemporal trace segmentation.
 """
 
 import numpy as np
@@ -33,19 +33,19 @@ class InteractiveVisualization:
         self.output_dir = Path(output_directory)
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    def _extract_safe_data(self, cube: Dict, key: str, default=None):
-        """Safely extract data from cube, handling arrays and lists."""
-        data = cube.get(key, default)
+    def _extract_safe_data(self, trace: Dict, key: str, default=None):
+        """Safely extract data from trace, handling arrays and lists."""
+        data = trace.get(key, default)
         if data is None:
             return default
         if isinstance(data, np.ndarray):
             return data.tolist() if data.size > 0 else (default or [])
         return data if data else (default or [])
     
-    def _get_pixels_safely(self, cube: Dict) -> List[Tuple[int, int]]:
+    def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
         """Extract pixel coordinates, checking multiple possible keys."""
         for key in ['pixels', 'coordinates']:
-            pixels = self._extract_safe_data(cube, key, [])
+            pixels = self._extract_safe_data(trace, key, [])
             if pixels:
                 if isinstance(pixels[0], (list, tuple)) and len(pixels[0]) == 2:
                     return [tuple(p) for p in pixels]
@@ -53,25 +53,25 @@ class InteractiveVisualization:
                     return [tuple(pixels)]
         return []
     
-    def _get_ndvi_profile(self, cube: Dict) -> List[float]:
+    def _get_ndvi_profile(self, trace: Dict) -> List[float]:
         """Extract NDVI temporal profile, checking multiple possible keys."""
         for key in ['ndvi_profile', 'mean_temporal_profile', 'ndvi_time_series']:
-            profile = self._extract_safe_data(cube, key, [])
+            profile = self._extract_safe_data(trace, key, [])
             if profile:
                 return profile
         return []
     
-    def _is_valid_cube(self, cube: Dict) -> bool:
-        """Check if cube has both valid pixels and NDVI data."""
-        return len(self._get_pixels_safely(cube)) > 0 and len(self._get_ndvi_profile(cube)) > 0
+    def _is_valid_trace(self, trace: Dict) -> bool:
+        """Check if trace has both valid pixels and NDVI data."""
+        return len(self._get_pixels_safely(trace)) > 0 and len(self._get_ndvi_profile(trace)) > 0
     
-    def create_all_visualizations(self, cubes: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str], 
+    def create_all_visualizations(self, traces: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str], 
                                 municipality_name: str = "Unknown") -> Dict[str, str]:
         """Create 3D spatiotemporal visualization for vegetation clusters."""        
-        processed_cubes = self._process_cube_data(cubes, data)
-        valid_cubes = [c for c in processed_cubes if self._is_valid_cube(c)]
+        processed_traces = self._process_trace_data(traces, data)
+        valid_traces = [c for c in processed_traces if self._is_valid_trace(c)]
                 
-        if not valid_cubes:
+        if not valid_traces:
             logger.warning("No valid vegetation clusters found")
             return {}
         
@@ -104,12 +104,12 @@ class InteractiveVisualization:
                         pbar.n = n_clusters
                         pbar.refresh()
 
-            n_clusters = len(valid_cubes)
+            n_clusters = len(valid_traces)
             done_event = threading.Event()
             progress_thread = threading.Thread(target=fake_progress_bar, args=(done_event, n_clusters))
             progress_thread.start()
 
-            result = self.create_3d_spatiotemporal_visualization(valid_cubes, data, filename, title)
+            result = self.create_3d_spatiotemporal_visualization(valid_traces, data, filename, title)
             done_event.set()
             progress_thread.join()
             
@@ -124,36 +124,35 @@ class InteractiveVisualization:
             logger.error(f"✗ Error in 3D visualization: {str(e)}")
             return {}
     
-    def _process_cube_data(self, cubes: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str]) -> List[Dict]:
-        """Process cube data into a consistent format for visualization."""
-        processed_cubes = []
+    def _process_trace_data(self, traces: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str]) -> List[Dict]:
+        """Process trace data into a consistent format for visualization."""
+        processed_traces = []
         time_length = len(data.time) if hasattr(data, 'dims') and 'time' in data.dims else 1
         
-        for i, cube in enumerate(cubes):
-            # Since STCube is no longer used, all cubes are dictionaries
-            # Process dictionary cubes
-            pixels = self._get_pixels_safely(cube)
-            ndvi_profile = self._get_ndvi_profile(cube)
-            cube_dict = {
-                'id': cube.get('id', i),
+        for i, trace in enumerate(traces):
+            # Process dictionary traces
+            pixels = self._get_pixels_safely(trace)
+            ndvi_profile = self._get_ndvi_profile(trace)
+            trace_dict = {
+                'id': trace.get('id', i),
                 'pixels': pixels,
-                'area': cube.get('area', cube.get('size', len(pixels))),
+                'area': trace.get('area', trace.get('size', len(pixels))),
                 'ndvi_profile': ndvi_profile,
-                'mean_ndvi': cube.get('mean_ndvi', np.mean(ndvi_profile) if ndvi_profile else 0.5),
-                'temporal_extent': cube.get('temporal_extent', (0, time_length)),
-                'heterogeneity': cube.get('heterogeneity', cube.get('temporal_variance', 0.0)),
-                'vegetation_type': cube.get('vegetation_type', 'Unknown'),
-                'trend_score': cube.get('trend_score', 0.0)
+                'mean_ndvi': trace.get('mean_ndvi', np.mean(ndvi_profile) if ndvi_profile else 0.5),
+                'temporal_extent': trace.get('temporal_extent', (0, time_length)),
+                'heterogeneity': trace.get('heterogeneity', trace.get('temporal_variance', 0.0)),
+                'vegetation_type': trace.get('vegetation_type', 'Unknown'),
+                'trend_score': trace.get('trend_score', 0.0)
             }
-            processed_cubes.append(cube_dict)
+            processed_traces.append(trace_dict)
         
-        return processed_cubes
+        return processed_traces
     
-    def create_3d_spatiotemporal_visualization(self, cubes: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View"):
+    def create_3d_spatiotemporal_visualization(self, traces: List[Dict], data: Union[xr.Dataset, str], filename: str, title: str = "3D Spatiotemporal View"):
         """Create a 3D visualization with X,Y spatial coordinates and Years (Z) axis, using a grayscale basemap."""
         config = get_config()
-        if not cubes:
-            logger.warning("No cubes provided for 3D visualization")
+        if not traces:
+            logger.warning("No traces provided for 3D visualization")
             return None
 
         # Determine temporal dimensions
@@ -161,13 +160,13 @@ class InteractiveVisualization:
             n_time_steps = len(data.time)
             actual_years = [1984 + i for i in range(n_time_steps)]
         else:
-            first_valid = next((c for c in cubes if self._is_valid_cube(c)), None)
+            first_valid = next((c for c in traces if self._is_valid_trace(c)), None)
             if not first_valid:
                 return None
             n_time_steps = len(self._get_ndvi_profile(first_valid))
             actual_years = [1984 + i for i in range(n_time_steps)]
 
-        valid_cubes = [c for c in cubes if self._is_valid_cube(c)]
+        valid_traces = [c for c in traces if self._is_valid_trace(c)]
         fig = go.Figure()
 
         # Create basemap
@@ -191,36 +190,36 @@ class InteractiveVisualization:
                     return y_interp, x_interp
             return px_y, px_x
 
-        # Add 3D spatiotemporal cubes using Mesh3D for proper cube visualization
-        # Determine appropriate cube size based on coordinate system scale
+        # Add 3D spatiotemporal traces using Mesh3D for proper trace visualization
+        # Determine appropriate trace size based on coordinate system scale
         if hasattr(data, 'x') and hasattr(data, 'y'):
             x_coords_data = np.array(data.x)
             y_coords_data = np.array(data.y)
             if len(x_coords_data) > 1 and len(y_coords_data) > 1:
                 x_resolution = abs(x_coords_data[1] - x_coords_data[0])
                 y_resolution = abs(y_coords_data[1] - y_coords_data[0])
-                cube_size = min(x_resolution, y_resolution) * 0.8  # 80% of pixel size
+                trace_size = min(x_resolution, y_resolution) * 0.8  # 80% of pixel size
             else:
-                cube_size = 0.0003  # Fallback small size
+                trace_size = 0.0003  # Fallback small size
         else:
-            cube_size = 0.5  # Fallback for pixel coordinates
+            trace_size = 0.5  # Fallback for pixel coordinates
         
         # Get config for visualization limits
         max_time_layers = config.max_time_layers 
         max_clusters = config.max_clusters_3d
 
-        for cube_idx, cube in enumerate(valid_cubes[:max_clusters]):
-            pixels = self._get_pixels_safely(cube)
-            ndvi_profile = self._get_ndvi_profile(cube)
+        for trace_idx, trace in enumerate(valid_traces[:max_clusters]):
+            pixels = self._get_pixels_safely(trace)
+            ndvi_profile = self._get_ndvi_profile(trace)
             
-            # Get the cluster ID from the cube data
-            actual_cluster_id = cube.get('id', cube_idx) + 1
+            # Get the cluster ID from the trace data
+            actual_cluster_id = trace.get('id', trace_idx) + 1
             legendgroup = f"cluster_{actual_cluster_id}"
             for time_idx in range(min(max_time_layers, n_time_steps)):
                 actual_year = actual_years[time_idx]
                 if time_idx < len(ndvi_profile) and pixels:
                     geo_coords = [transform_pixel_to_geo(px_y, px_x, data) for px_y, px_x in pixels]
-                    # Batch create cubes for better performance - combine multiple pixels into one mesh
+                    # Batch create traces for better performance - combine multiple pixels into one mesh
                     if geo_coords:
                         all_x_coords = []
                         all_y_coords = []
@@ -228,35 +227,35 @@ class InteractiveVisualization:
                         all_i_indices = []
                         all_j_indices = []
                         all_k_indices = []
-                        half_size = cube_size / 2
+                        half_size = trace_size / 2
                         time_half_size = 0.45  # Small temporal extent
                         for vertex_offset, (geo_y, geo_x) in enumerate(geo_coords):
-                            # Define cube vertices (8 corners) for this pixel
+                            # Define trace vertices (8 corners) for this pixel
                             base_idx = vertex_offset * 8
                             
-                            # Add 8 vertices for this cube
-                            cube_x = [geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size,
+                            # Add 8 vertices for this voxel
+                            voxel_x = [geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size,
                                      geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size]
-                            cube_y = [geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size,
+                            voxel_y = [geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size,
                                      geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size]
-                            cube_z = [actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size,
+                            voxel_z = [actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size,
                                      actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size]
-                            all_x_coords.extend(cube_x)
-                            all_y_coords.extend(cube_y)
-                            all_z_coords.extend(cube_z)
+                            all_x_coords.extend(voxel_x)
+                            all_y_coords.extend(voxel_y)
+                            all_z_coords.extend(voxel_z)
                             
-                            # Define cube faces using vertex indices (12 triangles for 6 faces)
+                            # Define voxel faces using vertex indices (12 triangles for 6 faces)
                             # Bottom face (z-min): vertices 0,1,2,3
                             # Top face (z-max): vertices 4,5,6,7
                             # Side faces connecting bottom to top
-                            cube_i = [0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1]
-                            cube_j = [1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6]
-                            cube_k = [2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5]
+                            voxel_i = [0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1]
+                            voxel_j = [1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6]
+                            voxel_k = [2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5]
                             
-                            # Offset indices for this cube
-                            all_i_indices.extend([i + base_idx for i in cube_i])
-                            all_j_indices.extend([j + base_idx for j in cube_j])
-                            all_k_indices.extend([k + base_idx for k in cube_k])
+                            # Offset indices for this voxel
+                            all_i_indices.extend([i + base_idx for i in voxel_i])
+                            all_j_indices.extend([j + base_idx for j in voxel_j])
+                            all_k_indices.extend([k + base_idx for k in voxel_k])
                         ndvi_val = ndvi_profile[time_idx]
                         # Only show legend for the first year of each cluster
                         show_legend = (time_idx == 0)
@@ -323,7 +322,7 @@ class InteractiveVisualization:
         
         # Update layout with fixed axis ranges and control buttons
         fig.update_layout(
-            title=f'{title} - {len(valid_cubes)} Vegetation Clusters',
+            title=f'{title} - {len(valid_traces)} Vegetation Clusters',
             scene=dict(
                 xaxis=dict(
                     title='Longitude',

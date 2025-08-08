@@ -122,9 +122,9 @@ class CommonVisualization:
         bounds = [lon_min, lat_min, lon_max, lat_max]
         return bounds
 
-    def _get_pixels_safely(self, cube: Dict) -> List[Tuple[int, int]]:
-        """Safely extract pixels from cube data, handling different formats."""
-        pixels = cube['coordinates']
+    def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
+        """Safely extract pixels from trace data, handling different formats."""
+        pixels = trace['coordinates']
         return [tuple(p) for p in pixels]
 
     def _convert_pixel_to_latlon(self, data: Any, y_coord: int, x_coord: int) -> Tuple[float, float]:
@@ -163,20 +163,20 @@ class CommonVisualization:
             if trend_type not in results:
                 continue
                 
-            cubes = results[trend_type]
+            traces = results[trend_type]
             
-            for cube_idx, cube in enumerate(cubes):
-                pixels = self._get_pixels_safely(cube)
+            for trace_idx, trace in enumerate(traces):
+                pixels = self._get_pixels_safely(trace)
                 if not pixels:
                     continue
                     
-                # Get cluster ID from the cube data
-                actual_cluster_id = cube.get('id', cube_idx)
+                # Get cluster ID from the trace data
+                actual_cluster_id = trace.get('id', trace_idx)
                     
                 # Get NDVI profile for this cluster - use mean_temporal_profile from segmentation
                 ndvi_profile = None
                 for key in ['mean_temporal_profile', 'ndvi_profile', 'ndvi_time_series']:
-                    profile = cube.get(key, None)
+                    profile = trace.get(key, None)
                     if profile is not None:
                         if hasattr(profile, 'tolist'):
                             ndvi_profile = profile.tolist()
@@ -185,7 +185,7 @@ class CommonVisualization:
                         break
                 
                 if not ndvi_profile or len(ndvi_profile) != len(time_coords):
-                    logger.debug(f"Cluster {cube_idx}: Skipping cluster - NDVI profile length {len(ndvi_profile) if ndvi_profile else 0} != time coords length {len(time_coords)}, available keys: {list(cube.keys())}")
+                    logger.debug(f"Cluster {trace_idx}: Skipping cluster - NDVI profile length {len(ndvi_profile) if ndvi_profile else 0} != time coords length {len(time_coords)}, available keys: {list(trace.keys())}")
                     continue
                 
                 # Calculate year-over-year NDVI changes
@@ -382,14 +382,14 @@ class CommonVisualization:
             if trend_type not in results:
                 continue
                 
-            cubes = results[trend_type]
+            traces = results[trend_type]
             
-            for cube in cubes:
-                pixels = self._get_pixels_safely(cube)
+            for trace in traces:
+                pixels = self._get_pixels_safely(trace)
                 if not pixels:
                     continue
                 
-                cluster_id = cube.get('id', 0) + 1
+                cluster_id = trace.get('id', 0) + 1
                 
                 # Calculate cluster centroid for label placement
                 lats, lons = [], []

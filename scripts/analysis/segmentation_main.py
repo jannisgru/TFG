@@ -1,7 +1,7 @@
 """
 Main Pipeline for Vegetation-Focused ST-Cube Segmentation
 
-Implements the main workflow for NDVI-based spatiotemporal cube segmentation, including data loading, preprocessing, clustering, 
+Implements the main workflow for NDVI-based spatiotemporal trace segmentation, including data loading, preprocessing, clustering, 
 and result export/visualization. Entry point for running the segmentation pipeline with configurable parameters.
 """
 
@@ -31,7 +31,7 @@ class VegetationSegmentationParameters:
     """Parameters for vegetation segmentation."""
     max_spatial_distance: int = None
     min_vegetation_ndvi: float = None
-    min_cube_size: int = None
+    min_cluster_size: int = None
     ndvi_variance_threshold: float = None
     chunk_size: int = None
     eps: float = None  # DBSCAN eps parameter (maximum distance between samples)
@@ -48,8 +48,8 @@ class VegetationSegmentationParameters:
             self.max_spatial_distance = config.max_spatial_distance
         if self.min_vegetation_ndvi is None:
             self.min_vegetation_ndvi = config.min_vegetation_ndvi
-        if self.min_cube_size is None:
-            self.min_cube_size = config.min_cube_size
+        if self.min_cluster_size is None:
+            self.min_cluster_size = config.min_cluster_size
         if self.ndvi_variance_threshold is None:
             self.ndvi_variance_threshold = config.ndvi_variance_threshold
         if self.chunk_size is None:
@@ -112,7 +112,7 @@ class VegetationSegmenter:
             logger.info("2. Extracting vegetation pixels...")
             vegetation_pixels, vegetation_coords = self.extract_vegetation_pixels(data, valid_mask)
 
-            if len(vegetation_pixels) < self.params.min_cube_size:
+            if len(vegetation_pixels) < self.params.min_cluster_size:
                 logger.warning(f"Insufficient vegetation pixels: {len(vegetation_pixels)}")
                 return []
             
@@ -120,18 +120,18 @@ class VegetationSegmenter:
             logger.info("3. Performing spatially-constrained clustering...")
             clusters = self.perform_spatially_constrained_clustering(vegetation_pixels, vegetation_coords, global_cluster_counter)
             
-            # Step 4: Create vegetation cubes
+            # Step 4: Create vegetation traces
             logger.info("4. Creating vegetation ST-cubes...")
-            vegetation_cubes = self.create_vegetation_cubes(clusters)
+            vegetation_traces = self.create_vegetation_traces(clusters)
             
             # Step 5: Export cluster data to JSON (only for single trend processing)
-            if vegetation_cubes and not is_dual_trend_processing:
+            if vegetation_traces and not is_dual_trend_processing:
                 config = get_config()
                 if config.enable_json_export:
                     logger.info("5. Exporting cluster data to JSON...")
                     # Get configuration parameters for export
                     config_params = {
-                        "min_cube_size": self.params.min_cube_size,
+                        "min_cluster_size": self.params.min_cluster_size,
                         "max_spatial_distance": self.params.max_spatial_distance,
                         "min_vegetation_ndvi": self.params.min_vegetation_ndvi,
                         "eps": self.params.eps,
@@ -145,7 +145,7 @@ class VegetationSegmenter:
                     # Use the dedicated JSON exporter
                     json_exporter = VegetationClusterJSONExporter()
                     json_exporter.export_clusters_to_json(
-                        vegetation_cubes, data, output_dir, municipality_name, config_params
+                        vegetation_traces, data, output_dir, municipality_name, config_params
                     )
                 else:
                     logger.info("5. JSON export disabled in configuration")
@@ -155,13 +155,13 @@ class VegetationSegmenter:
                 logger.info("5. No vegetation clusters found for JSON export")
             
             # Step 6: Generate visualizations if requested
-            if create_visualizations and vegetation_cubes:
+            if create_visualizations and vegetation_traces:
                 logger.info("6. Creating visualizations...")
                 self.create_visualizations(
-                    vegetation_cubes, data, output_dir, municipality_name
+                    vegetation_traces, data, output_dir, municipality_name
                 )
             
-            return vegetation_cubes
+            return vegetation_traces
             
         except Exception as e:
             logger.error(f"Error during vegetation segmentation: {str(e)}")
@@ -215,7 +215,7 @@ class VegetationSegmenter:
             spatial_coords = self.extract_spatial_coordinates(data)
             
             # Validate sufficient data
-            if n_valid < self.params.min_cube_size:
+            if n_valid < self.params.min_cluster_size:
                 logger.error(f"Insufficient valid pixels: {n_valid}")
                 return None, None, None
             
@@ -350,7 +350,7 @@ class VegetationSegmenter:
             cluster_coords = coords[cluster_mask]
             cluster_pixels = pixels[cluster_mask]
             
-            if len(cluster_coords) < self.params.min_cube_size:
+            if len(cluster_coords) < self.params.min_cluster_size:
                 continue
             
             # Apply spatial constraints to maintain cluster coherence
@@ -366,7 +366,7 @@ class VegetationSegmenter:
                 spatial_threshold = min(self.params.max_spatial_distance, mean_distance * 1.5)
                 valid_pixels = distances_to_centroid <= spatial_threshold
                 
-                if valid_pixels.sum() >= self.params.min_cube_size:
+                if valid_pixels.sum() >= self.params.min_cluster_size:
                     clusters.append({
                         'id': global_cluster_counter + len(clusters),
                         'coordinates': cluster_coords[valid_pixels],
@@ -390,17 +390,17 @@ class VegetationSegmenter:
         
         return clusters
     
-    def create_vegetation_cubes(self, clusters: List[Dict]) -> List[Dict]:
+    def create_vegetation_traces(self, clusters: List[Dict]) -> List[Dict]:
         """Create vegetation ST-cubes from clusters."""
         
-        vegetation_cubes = []
+        vegetation_traces = []
         
         for i, cluster in enumerate(clusters, 1):
             try:
                 # Calculate additional statistics
                 ndvi_profiles = cluster['ndvi_profiles']
                 
-                cube = {
+                trace = {
                     **cluster,  # Include all cluster info
                     'area': cluster['size'],
                     'mean_temporal_profile': np.mean(ndvi_profiles, axis=0),
@@ -409,13 +409,13 @@ class VegetationSegmenter:
                     'vegetation_type': self.classify_vegetation_type(cluster)
                 }
                 
-                vegetation_cubes.append(cube)
+                vegetation_traces.append(trace)
                 
             except Exception as e:
-                logger.warning(f"Error creating cube for cluster {cluster['id']}: {e}")
+                logger.warning(f"Error creating trace for cluster {cluster['id']}: {e}")
                 continue
         
-        return vegetation_cubes
+        return vegetation_traces
     
     def calculate_trend_score(self, ndvi_profiles: np.ndarray) -> float:
         """Calculate trend score (positive for greening NDVI, negative for browning)."""
@@ -446,7 +446,7 @@ class VegetationSegmenter:
         else:
             return "Sparse Vegetation"
     
-    def create_visualizations(self, vegetation_cubes: List[Dict], 
+    def create_visualizations(self, vegetation_traces: List[Dict], 
                                       data: xr.Dataset, 
                                       output_dir: str,
                                       municipality_name: str):
@@ -459,7 +459,7 @@ class VegetationSegmenter:
         # 1. Interactive HTML visualizations
         interactive_viz = InteractiveVisualization(output_directory=str(output_path))
         interactive_files = interactive_viz.create_all_visualizations(
-            cubes=vegetation_cubes,
+            traces=vegetation_traces,
             data=data,
             municipality_name=municipality_name
         )
@@ -469,7 +469,7 @@ class VegetationSegmenter:
         logger.info("Generating 2D Visualizations...")
         static_viz = StaticVisualization(output_directory=str(output_path))
         static_files = static_viz.create_all_static_visualizations(
-            cubes=vegetation_cubes,
+            traces=vegetation_traces,
             data=data,
             municipality_name=municipality_name
         )
@@ -587,7 +587,7 @@ def segment_vegetation(netcdf_path: str = None,
         
         # Create parameters for this trend
         trend_params = VegetationSegmentationParameters(
-            min_cube_size=parameters.min_cube_size,
+            min_cluster_size=parameters.min_cluster_size,
             max_spatial_distance=parameters.max_spatial_distance,
             min_vegetation_ndvi=parameters.min_vegetation_ndvi,
             eps=parameters.eps,
@@ -625,7 +625,7 @@ def segment_vegetation(netcdf_path: str = None,
             logger.info("Creating combined JSON export...")
             # Get configuration parameters for export
             config_params = {
-                "min_cube_size": parameters.min_cube_size,
+                "min_cluster_size": parameters.min_cluster_size,
                 "max_spatial_distance": parameters.max_spatial_distance,
                 "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
                 "eps": parameters.eps,
@@ -668,7 +668,7 @@ def segment_vegetation(netcdf_path: str = None,
             logger.info("Creating combined JSON export for single trend...")
             # Get configuration parameters for export
             config_params = {
-                "min_cube_size": parameters.min_cube_size,
+                "min_cluster_size": parameters.min_cluster_size,
                 "max_spatial_distance": parameters.max_spatial_distance,
                 "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
                 "eps": parameters.eps,

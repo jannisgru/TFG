@@ -1,7 +1,7 @@
 """
 Vegetation-focused ST-Cube Segmentation Package
 
-A streamlined implementation of spatiotemporal cube segmentation focused specifically
+A streamlined implementation of spatiotemporal trace segmentation focused specifically
 on vegetation analysis using NDVI clustering with local spatial constraints.
 
 Package Structure:
@@ -22,27 +22,27 @@ Example Usage:
     from segmentation import segment_vegetation, get_config
     
     # Use default config values
-    cubes = segment_vegetation()
+    traces = segment_vegetation()
     
     # Or customize specific parameters
     from segmentation.segmentation_main import VegetationSegmentationParameters
     params = VegetationSegmentationParameters(
         max_spatial_distance=10,
         min_vegetation_ndvi=0.4,
-        min_cube_size=20
+        min_cluster_size=20
     )
     
-    cubes = segment_vegetation(parameters=params)
+    traces = segment_vegetation(parameters=params)
     
     # Filter for only decreasing NDVI trends (e.g., deforestation)
     params = VegetationSegmentationParameters(
         max_spatial_distance=10,
         min_vegetation_ndvi=0.4,
-        min_cube_size=20,
+        min_cluster_size=20,
         ndvi_trend_filter='decreasing'
     )
     
-    cubes = segment_vegetation(parameters=params)
+    traces = segment_vegetation(parameters=params)
 """
 from .visualization import StaticVisualization, InteractiveVisualization, CommonVisualization
 from .segmentation_main import segment_vegetation, VegetationSegmentationParameters

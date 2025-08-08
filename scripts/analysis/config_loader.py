@@ -19,7 +19,7 @@ class SegmentationConfig:
     """Configuration data class for vegetation segmentation."""
     
     # Core segmentation parameters (defined in YAML)
-    min_cube_size: int
+    min_cluster_size: int
     max_spatial_distance: int
     min_vegetation_ndvi: float
     ndvi_variance_threshold: float
@@ -71,7 +71,7 @@ class SegmentationConfig:
     bbox_inches: str = "tight"
     
     # 3D visualization
-    cube_size_multiplier: float = 0.01
+    voxel_size_multiplier: float = 0.01
     max_time_layers: int = 42
     max_clusters_3d: int = 50
     camera_x: float = 1.5
@@ -144,7 +144,7 @@ class ConfigLoader:
         # Core segmentation parameters (required from YAML)
         seg_params = config_data.get('segmentation', {})
         flattened.update({
-            'min_cube_size': seg_params['min_cube_size'],
+            'min_cluster_size': seg_params['min_cluster_size'],
             'max_spatial_distance': seg_params['max_spatial_distance'],
             'min_vegetation_ndvi': seg_params['min_vegetation_ndvi'],
             'ndvi_variance_threshold': seg_params['ndvi_variance_threshold'],

@@ -1,6 +1,6 @@
 # Vegetation-focused ST-Cube Segmentation
 
-Spatiotemporal cube segmentation for vegetation analysis using NDVI clustering with spatial constraints.
+Spatiotemporal trace segmentation for vegetation analysis using NDVI clustering with spatial constraints.
 
 ## Overview
 
@@ -42,7 +42,7 @@ Configure in `segment_config.yaml`:
 ### Segmentation Parameters
 | Parameter | Description |
 |-----------|-------------|
-| `min_cube_size` | Minimum pixels for valid cluster |
+| `min_cluster_size` | Minimum pixels for valid cluster |
 | `max_spatial_distance` | Maximum pixel distance for spatial clustering |
 | `min_vegetation_ndvi` | Minimum NDVI threshold for vegetation |
 | `ndvi_variance_threshold` | Minimum NDVI variance to include pixel |
@@ -83,7 +83,7 @@ analysis/
 
 **Segmentation Parameters:**
 - **`max_spatial_distance`**: Higher values allow more spatial spread in post-processing
-- **`min_cube_size`**: Prevents tiny/noisy clusters through post-processing  
+- **`min_cluster_size`**: Prevents tiny/noisy clusters through post-processing  
 - **`min_vegetation_ndvi`**: Threshold for initial vegetation pixel selection
 - **`ndvi_variance_threshold`**: Filters static vegetation pixels
 
