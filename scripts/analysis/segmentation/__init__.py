@@ -8,7 +8,7 @@ Package Structure:
 - core/: Core data structures (VegetationSegmentationParameters, STCube, CubeCollection)
 - visualization/: Static and interactive visualization modules
 - initializers/: Clustering initialization strategies
-- Main modules: segmentation_main, spatial_bridging, config_loader, json_exporter
+- Main modules: segmentation_main, config_loader, json_exporter
 
 Main Function:
 - segment_vegetation: Run vegetation-focused NDVI clustering segmentation
@@ -16,7 +16,6 @@ Main Function:
 Features:
 - NDVI-based clustering with spatial constraints
 - Temporal trend filtering (greening/browning NDVI)
-- Spatial bridging for cluster connectivity
 - Interactive and static visualizations
 - JSON export for further analysis
 
@@ -52,7 +51,6 @@ from .initializers import VegetationNDVIClusteringInitializer
 from .segmentation_main import segment_vegetation
 from .config_loader import get_config, get_parameter, reload_config
 from .json_exporter import VegetationClusterJSONExporter
-from .spatial_bridging import SpatialBridging, BridgingParameters, apply_spatial_bridging_to_clusters
 
 __all__ = [
     # Main API
@@ -62,11 +60,6 @@ __all__ = [
     'VegetationSegmentationParameters',
     'STCube',
     'VegetationNDVIClusteringInitializer',
-    
-    # Spatial bridging
-    'SpatialBridging',
-    'BridgingParameters', 
-    'apply_spatial_bridging_to_clusters',
     
     # Export functionality
     'VegetationClusterJSONExporter',

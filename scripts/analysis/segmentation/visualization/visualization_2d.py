@@ -135,7 +135,6 @@ class StaticVisualization:
         param_sections = [
             ("Segmentation Parameters", ['min_cube_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold', 'n_clusters', 'temporal_weight']),
             ("Clustering Parameters", ['spatial_weight', 'min_samples_ratio', 'eps_search_attempts']),
-            ("Bridging Parameters", ['enable_spatial_bridging', 'bridge_similarity_tolerance', 'max_bridge_gap', 'min_bridge_density', 'connectivity_radius', 'max_bridge_length', 'min_cluster_size_for_bridging']),
             ("Data Parameters", ['netcdf_path', 'municipalities_data', 'municipality', 'output_dir']),
             ("Analysis Parameters", ['chunk_size', 'max_pixels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
         ]

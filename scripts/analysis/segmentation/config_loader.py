@@ -32,15 +32,6 @@ class SegmentationConfig:
     min_samples_ratio: float
     spatial_weight: float
     
-    # Spatial bridging parameters (defined in YAML)
-    enable_spatial_bridging: bool
-    bridge_similarity_tolerance: float
-    max_bridge_gap: int
-    min_bridge_density: float
-    connectivity_radius: int
-    max_bridge_length: int
-    min_cluster_size_for_bridging: int
-    
     # Processing parameters (defined in YAML)
     chunk_size: int
     max_pixels_for_sampling: int
@@ -169,18 +160,6 @@ class ConfigLoader:
             'eps_search_attempts': cluster_params['eps_search_attempts'],
             'min_samples_ratio': cluster_params['min_samples_ratio'],
             'spatial_weight': cluster_params['spatial_weight'],
-        })
-        
-        # Spatial bridging parameters (required from YAML)
-        bridge_params = config_data.get('bridging', {})
-        flattened.update({
-            'enable_spatial_bridging': bridge_params['enable_spatial_bridging'],
-            'bridge_similarity_tolerance': bridge_params['bridge_similarity_tolerance'],
-            'max_bridge_gap': bridge_params['max_bridge_gap'],
-            'min_bridge_density': bridge_params['min_bridge_density'],
-            'connectivity_radius': bridge_params['connectivity_radius'],
-            'max_bridge_length': bridge_params['max_bridge_length'],
-            'min_cluster_size_for_bridging': bridge_params['min_cluster_size_for_bridging'],
         })
         
         # Processing parameters (required from YAML)

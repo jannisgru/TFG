@@ -18,12 +18,8 @@ This package segments satellite NDVI time series into spatially and temporally c
    - Combines NDVI time series and spatial coordinates, weighted by `temporal_weight` and `spatial_weight`
    - Uses DBSCAN to cluster pixels into NDVI-similar and spatially close groups
    - Number of clusters controlled by `n_clusters` (if set), otherwise determined automatically
-4. **Spatial Bridging**: 
-   - Optional post-processing step that merges clusters connected by "bridges" of similar pixels
-   - Allows clusters to grow through indirect connections, overcoming strict spatial distance limits
-   - Only merges clusters—never splits them
-5. **Spatial Constraints**: Ensures clusters remain spatially coherent within `max_spatial_distance`
-6. **Export & Visualization**: Results exported as JSON with static (Matplotlib) and interactive (Plotly) visualizations
+4. **Spatial Constraints**: Ensures clusters remain spatially coherent within `max_spatial_distance`
+5. **Export & Visualization**: Results exported as JSON with static (Matplotlib) and interactive (Plotly) visualizations
 
 ## Clustering Algorithm (DBSCAN)
 
@@ -37,22 +33,6 @@ The core segmentation uses DBSCAN clustering on combined NDVI and spatial featur
 3. **Parameters**: Controlled by `min_samples_ratio` (minimum cluster size) and `eps_search_attempts` (neighborhood radius optimization)
 
 DBSCAN is ideal for flexible, shape-adaptive clustering without requiring pre-specified cluster counts.
-
-## Spatial Bridging Algorithm
-
-Post-processing step using graph-based approach with NetworkX:
-
-1. **Graph Construction**: All pixels represented as nodes with edges to neighboring pixels (within `connectivity_radius`)
-2. **Bridge Search**: For each cluster pair, searches for valid connecting paths using graph traversal
-3. **Bridge Validation**: Path must satisfy:
-   - NDVI difference between consecutive pixels ≤ `bridge_similarity_tolerance`
-   - ≤ `max_bridge_gap` consecutive dissimilar pixels allowed
-   - Overall similar pixel density ≥ `min_bridge_density`
-   - Total length ≤ `max_bridge_length`
-   - Only considers clusters ≥ `min_cluster_size_for_bridging`
-4. **Merging**: Valid bridges merge connected clusters
-
-Enable for fragmented landscapes; disable for compact, strictly spatial clusters.
 
 ## Key Parameters
 
@@ -75,17 +55,6 @@ Configure in `segment_config.yaml`:
 | `min_samples_ratio` | Minimum samples ratio for DBSCAN |
 | `eps_search_attempts` | Attempts to find optimal DBSCAN epsilon |
 
-### Spatial Bridging Parameters
-| Parameter | Description |
-|-----------|-------------|
-| `enable_spatial_bridging` | Enable/disable bridging post-processing |
-| `bridge_similarity_tolerance` | Max NDVI difference for bridge pixels (0-1) |
-| `max_bridge_gap` | Max consecutive dissimilar pixels in bridge |
-| `min_bridge_density` | Minimum % similar pixels in bridge (0-1) |
-| `connectivity_radius` | Neighborhood size for spatial graph |
-| `max_bridge_length` | Maximum bridge path length |
-| `min_cluster_size_for_bridging` | Minimum cluster size for bridging eligibility |
-
 
 ## File Structure
 
@@ -105,7 +74,6 @@ segmentation/
 │   └── ndvi_cluster_initializer.py  # NDVI clustering logic
 ├── config_loader.py           # YAML config loader
 ├── json_exporter.py           # JSON export utilities
-├── spatial_bridging.py        # Graph-based cluster bridging
 ├── segmentation_main.py       # Main pipeline entry point
 ├── segment_config.yaml        # Main YAML config
 └── README.md

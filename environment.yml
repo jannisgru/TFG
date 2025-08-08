@@ -25,6 +25,5 @@ dependencies:
   - loguru
   - rtree
   - dask
-  - networkx
   - scikit-learn
   - scipy

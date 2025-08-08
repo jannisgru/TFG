@@ -21,7 +21,6 @@ import warnings
 from ..core.base import VegetationSegmentationParameters
 from ..core.cube import STCube
 from ..config_loader import get_config
-from ..spatial_bridging import apply_spatial_bridging_to_clusters, BridgingParameters
 
 warnings.filterwarnings('ignore')
 
@@ -84,22 +83,6 @@ class VegetationNDVIClusteringInitializer:
         
         # Step 2: Perform spatial clustering
         cluster_labels = self._perform_timed_clustering(ndvi_profiles, pixel_coords)
-        
-        # Step 2.5: Apply spatial bridging if enabled
-        config = get_config()
-        if config.enable_spatial_bridging:
-            logger.info("Applying spatial bridging...")
-            bridging_params = BridgingParameters(
-                bridge_similarity_tolerance=config.bridge_similarity_tolerance,
-                max_bridge_gap=config.max_bridge_gap,
-                min_bridge_density=config.min_bridge_density,
-                connectivity_radius=config.connectivity_radius,
-                max_bridge_length=config.max_bridge_length,
-                min_cluster_size_for_bridging=config.min_cluster_size_for_bridging
-            )
-            cluster_labels = apply_spatial_bridging_to_clusters(
-                cluster_labels, pixel_coords, ndvi_profiles, bridging_params
-            )
         
         # Step 3: Post-process clusters for quality
         cluster_labels = self._post_process_clusters(cluster_labels, pixel_coords)
