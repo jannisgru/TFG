@@ -81,7 +81,7 @@ class InteractiveVisualization:
         try:
             # Create a fake progress bar to simulate loading time, because its funny lol
             def fake_progress_bar(done_event, n_clusters):
-                total_time = random.uniform(27, 35)
+                total_time = random.uniform(27, 135)
                 breakpoints = sorted([random.uniform(0, total_time) for _ in range(n_clusters - 1)])
                 intervals = [breakpoints[0]] + [breakpoints[i] - breakpoints[i-1] for i in range(1, n_clusters - 1)] + [total_time - breakpoints[-1]] if n_clusters > 1 else [total_time]
                 with tqdm(total=n_clusters, desc="Generating 3D Visualization") as pbar:

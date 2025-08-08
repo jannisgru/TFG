@@ -562,7 +562,7 @@ def segment_vegetation(netcdf_path: str = None,
     
     # Create JSON export
     if config.enable_json_export and data is not None:
-        logger.info("Creating combined JSON export...")
+        logger.info("Creating JSON export...")
         # Get configuration parameters for export
         config_params = {
             "min_cluster_size": parameters.min_cluster_size,

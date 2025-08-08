@@ -255,8 +255,8 @@ class CommonVisualization:
                     y=year_data['lat'],
                     mode='markers',
                     marker=dict(
-                        size=12,
-                        symbol='square',
+                        size=8,
+                        symbol='circle',
                         color=ndvi_changes_clamped,
                         colorscale=colorscale,
                         cmin=-1,
@@ -270,7 +270,7 @@ class CommonVisualization:
                             ticktext=['-1.0 (Browning)', '-0.5', '0.0 (No Change)', '+0.5', '+1.0 (Greening)']
                         ),
                         opacity=0.8,
-                        line=dict(width=0.5, color='rgba(0,0,0,0.3)')
+                        line=dict(width=0.5, color='rgba(0,0,0,0.2)')
                     ),
                     text=[
                         f"Cluster {row['cluster_id']}<br>"
@@ -314,7 +314,7 @@ class CommonVisualization:
         fig.update_layout(
             title=dict(
                 text=f'Interactive Temporal NDVI Trends - {municipality_name}<br>'
-                     f'<sub>Use slider to navigate through years. Square pixels show NDVI change. Color indicates yearly change intensity.</sub>',
+                     f'<sub>Use slider to navigate through years. Points show NDVI change. Color indicates yearly change intensity.</sub>',
                 x=0.5,
                 font=dict(size=16)
             ),
