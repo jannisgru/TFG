@@ -60,7 +60,7 @@ Configure in `segment_config.yaml`:
 ## File Structure
 
 ```
-segmentation/
+analysis/
 ├── __init__.py
 ├── visualization/
 │   ├── __init__.py

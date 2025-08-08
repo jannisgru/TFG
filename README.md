@@ -12,7 +12,7 @@ TFG/
 │   └── boundaries/          # AMB and municipal boundaries
 ├── config/                  # Configuration files
 ├── scripts/
-│   ├── analysis/            # Change point detection, segmentation
+│   ├── analysis/            # Analysis of mulitidimensional raster data
 │   ├── processing/          # Data preparation and normalization
 │   └── visualization/       # 3D and dashboard visualizations
 ├── outputs/                 # Analysis results, maps, dashboards
