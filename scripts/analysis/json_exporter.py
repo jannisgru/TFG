@@ -111,7 +111,6 @@ class VegetationClusterJSONExporter:
                 "trends": {
                     trend: {
                         "cluster_count": len(clusters),
-                        "trend_type": trend
                     } for trend, clusters in results.items()
                 },
                 "config_parameters": parameters
@@ -243,8 +242,7 @@ class VegetationClusterJSONExporter:
         overall_std = self._calculate_overall_cluster_std(trace)
 
         summary = {
-            "area_traces": int(trace.get('area', len(coordinates))),
-            "trace_count": len(coordinates),  # Number of individual traces/pixels in the cluster
+            "trace_count": len(coordinates),
             "min_ndvi": float(min_ndvi) if min_ndvi is not None else None,
             "min_ndvi_year": int(min_year) if min_year is not None else None,
             "max_ndvi": float(max_ndvi) if max_ndvi is not None else None,

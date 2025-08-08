@@ -2,6 +2,8 @@
 
 Spatiotemporal trace segmentation for vegetation analysis using NDVI clustering with spatial constraints.
 
+University thesis project for vegetation analysis using satellite time series data.
+
 ## Overview
 
 This package segments satellite NDVI time series into spatially and temporally coherent clusters representing vegetation patches with similar NDVI dynamics and spatial proximity. Uses DBSCAN clustering for robust density-based segmentation that automatically determines the number of clusters.
@@ -17,7 +19,7 @@ This package segments satellite NDVI time series into spatially and temporally c
 3. **Clustering**: 
    - Combines NDVI time series and spatial coordinates, weighted by `temporal_weight` and `spatial_weight`
    - Uses DBSCAN to cluster pixels into NDVI-similar and spatially close groups
-   - Number of clusters determined automatically by DBSCAN parameters (`eps` and `min_samples`)
+   - Number of clusters determined automatically by DBSCAN parameters (`eps` and `min_pts`)
 4. **Spatial Constraints**: Ensures clusters remain spatially coherent within `max_spatial_distance`
 5. **Export & Visualization**: Results exported as JSON with static (Matplotlib) and interactive (Plotly) visualizations
 
@@ -30,8 +32,8 @@ The core segmentation uses DBSCAN clustering on combined NDVI and spatial featur
    - Density-based clustering that groups pixels based on feature similarity and density
    - Automatically determines the number of clusters based on data density
    - Can identify and filter out noise points (outliers)
-   - Controlled by `eps` (maximum distance between neighbors) and `min_samples` (minimum points to form cluster)
-3. **Parameters**: Cluster formation controlled by `eps` and `min_samples`, with spatial coherence enforced via `max_spatial_distance`
+   - Controlled by `eps` (maximum distance between neighbors) and `min_pts` (minimum points to form cluster)
+3. **Parameters**: Cluster formation controlled by `eps` and `min_pts`, with spatial coherence enforced via `max_spatial_distance`
 
 DBSCAN is robust to noise and can find clusters of varying shapes and sizes, making it well-suited for irregular vegetation patterns.
 
@@ -50,8 +52,8 @@ Configure in `segment_config.yaml`:
 ### Clustering Parameters
 | Parameter | Description |
 |-----------|-------------|
-| `eps` | DBSCAN eps: maximum distance between samples to be neighbors |
-| `min_samples` | DBSCAN min_samples: minimum samples in neighborhood to form cluster |
+| `eps` | DBSCAN Epsilon: maximum distance between samples to be neighbors |
+| `min_pts` | DBSCAN min_pts: minimum traces in neighborhood to form cluster |
 | `temporal_weight` | Weight for temporal vs spatial features (0-1) |
 | `spatial_weight` | Weight for spatial coordinates in feature space |
 
@@ -89,16 +91,9 @@ analysis/
 
 **Clustering Parameters:**
 - **`eps`**: Controls cluster density - smaller values create tighter, more clusters
-- **`min_samples`**: Minimum points needed to form a cluster - higher values reduce noise but may merge small clusters
+- **`min_pts`**: Minimum points needed to form a cluster - higher values reduce noise but may merge small clusters
 - **`temporal_weight`**: Weight for NDVI time series features (higher = more NDVI similarity focus)
 - **`spatial_weight`**: Weight for spatial coordinates (higher = more spatial compactness)
-
-### DBSCAN Parameter Guidelines
-- Start with `eps=1.0`, `min_samples=20`, `temporal_weight=0.1`, `spatial_weight=0.4` for initial testing
-- If too many small clusters: increase `eps` or decrease `min_samples`
-- If too few large clusters: decrease `eps` or increase `min_samples`  
-- Balance temporal vs spatial features: increase `temporal_weight` for more NDVI similarity, increase `spatial_weight` for more compact clusters
-- Monitor noise points in logs - too many may indicate poor parameter tuning
 
 ## Data Requirements
 
@@ -106,7 +101,3 @@ NetCDF file (created using `processing/create_mdim_raster.py`) with:
 - `ndvi` variable: NDVI values (dimensions: time, y, x or time, municipality, y, x)
 - `time`, `y`, `x` dimensions
 - Optional `municipality` dimension
-
-## License
-
-University thesis project for vegetation analysis using satellite time series data.

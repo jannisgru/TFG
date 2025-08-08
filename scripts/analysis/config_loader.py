@@ -26,8 +26,8 @@ class SegmentationConfig:
     ndvi_trend_filter: Optional[str]
     
     # Clustering parameters (defined in YAML)
-    eps: float  # DBSCAN eps parameter
-    min_samples: int  # DBSCAN min_samples parameter
+    eps: float  # DBSCAN epsilon parameter
+    min_pts: int  # DBSCAN minPts parameter
     temporal_weight: float
     spatial_weight: float
     
@@ -155,7 +155,7 @@ class ConfigLoader:
         cluster_params = config_data.get('clustering', {})
         flattened.update({
             'eps': cluster_params['eps'],
-            'min_samples': cluster_params['min_samples'],
+            'min_pts': cluster_params['min_pts'],
             'temporal_weight': cluster_params['temporal_weight'],
             'spatial_weight': cluster_params['spatial_weight'],
         })

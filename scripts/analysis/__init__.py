@@ -16,33 +16,6 @@ Features:
 - Temporal trend filtering (greening/browning NDVI)
 - Interactive and static visualizations
 - JSON export for further analysis
-
-Example Usage:
-    # Vegetation NDVI clustering segmentation with config
-    from segmentation import segment_vegetation, get_config
-    
-    # Use default config values
-    traces = segment_vegetation()
-    
-    # Or customize specific parameters
-    from segmentation.segmentation_main import VegetationSegmentationParameters
-    params = VegetationSegmentationParameters(
-        max_spatial_distance=10,
-        min_vegetation_ndvi=0.4,
-        min_cluster_size=20
-    )
-    
-    traces = segment_vegetation(parameters=params)
-    
-    # Filter for only decreasing NDVI trends (e.g., deforestation)
-    params = VegetationSegmentationParameters(
-        max_spatial_distance=10,
-        min_vegetation_ndvi=0.4,
-        min_cluster_size=20,
-        ndvi_trend_filter='decreasing'
-    )
-    
-    traces = segment_vegetation(parameters=params)
 """
 from .visualization import StaticVisualization, InteractiveVisualization, CommonVisualization
 from .segmentation_main import segment_vegetation, VegetationSegmentationParameters

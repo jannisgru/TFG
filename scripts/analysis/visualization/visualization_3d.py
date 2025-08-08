@@ -190,15 +190,14 @@ class InteractiveVisualization:
                     return y_interp, x_interp
             return px_y, px_x
 
-        # Add 3D spatiotemporal traces using Mesh3D for proper trace visualization
-        # Determine appropriate trace size based on coordinate system scale
+        # Add 3D spatiotemporal traces and determine appropriate trace size based on coordinate system scale
         if hasattr(data, 'x') and hasattr(data, 'y'):
             x_coords_data = np.array(data.x)
             y_coords_data = np.array(data.y)
             if len(x_coords_data) > 1 and len(y_coords_data) > 1:
                 x_resolution = abs(x_coords_data[1] - x_coords_data[0])
                 y_resolution = abs(y_coords_data[1] - y_coords_data[0])
-                trace_size = min(x_resolution, y_resolution) * 0.8  # 80% of pixel size
+                trace_size = min(x_resolution, y_resolution) * 0.8
             else:
                 trace_size = 0.0003  # Fallback small size
         else:

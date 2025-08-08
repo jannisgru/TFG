@@ -34,11 +34,11 @@ class VegetationSegmentationParameters:
     min_cluster_size: int = None
     ndvi_variance_threshold: float = None
     chunk_size: int = None
-    eps: float = None  # DBSCAN eps parameter (maximum distance between samples)
-    min_samples: int = None  # DBSCAN min_samples parameter
+    eps: float = None
+    min_pts: int = None
     temporal_weight: float = None
     spatial_weight: float = None
-    ndvi_trend_filter: Optional[str] = None  # 'greening', 'browning', or None
+    ndvi_trend_filter: Optional[str] = None
     
     def __post_init__(self):
         # Load config and set defaults if not provided
@@ -56,8 +56,8 @@ class VegetationSegmentationParameters:
             self.chunk_size = config.chunk_size
         if self.eps is None:
             self.eps = config.eps
-        if self.min_samples is None:
-            self.min_samples = config.min_samples
+        if self.min_pts is None:
+            self.min_pts = config.min_pts
         if self.temporal_weight is None:
             self.temporal_weight = config.temporal_weight
         if self.spatial_weight is None:
@@ -77,7 +77,6 @@ class VegetationSegmenter:
                           municipality_name,
                           create_visualizations: bool = True,
                           output_dir: str = "outputs/vegetation_clustering",
-                          is_dual_trend_processing: bool = False,
                           global_cluster_counter: int = 0
                           ) -> List[Dict[str, Any]]:
         """
@@ -124,43 +123,12 @@ class VegetationSegmenter:
             logger.info("4. Creating vegetation ST-cubes...")
             vegetation_traces = self.create_vegetation_traces(clusters)
             
-            # Step 5: Export cluster data to JSON (only for single trend processing)
-            if vegetation_traces and not is_dual_trend_processing:
-                config = get_config()
-                if config.enable_json_export:
-                    logger.info("5. Exporting cluster data to JSON...")
-                    # Get configuration parameters for export
-                    config_params = {
-                        "min_cluster_size": self.params.min_cluster_size,
-                        "max_spatial_distance": self.params.max_spatial_distance,
-                        "min_vegetation_ndvi": self.params.min_vegetation_ndvi,
-                        "eps": self.params.eps,
-                        "min_samples": self.params.min_samples,
-                        "ndvi_variance_threshold": self.params.ndvi_variance_threshold,
-                        "temporal_weight": self.params.temporal_weight,
-                        "netcdf_path": netcdf_path,
-                        "municipality_name": municipality_name
-                    }
-                    
-                    # Use the dedicated JSON exporter
-                    json_exporter = VegetationClusterJSONExporter()
-                    json_exporter.export_clusters_to_json(
-                        vegetation_traces, data, output_dir, municipality_name, config_params
-                    )
-                else:
-                    logger.info("5. JSON export disabled in configuration")
-            elif is_dual_trend_processing:
-                logger.info("5. Individual JSON export skipped (will be done in combined export)")
-            else:
-                logger.info("5. No vegetation clusters found for JSON export")
-            
-            # Step 6: Generate visualizations if requested
+            # Step 5: Generate visualizations
             if create_visualizations and vegetation_traces:
-                logger.info("6. Creating visualizations...")
+                logger.info("5. Creating visualizations...")
                 self.create_visualizations(
                     vegetation_traces, data, output_dir, municipality_name
                 )
-            
             return vegetation_traces
             
         except Exception as e:
@@ -168,7 +136,6 @@ class VegetationSegmenter:
             traceback.print_exc()
             return []
         finally:
-            # Clean up memory
             gc.collect()
 
     def load_and_prepare_data(self, netcdf_path: str,
@@ -194,21 +161,15 @@ class VegetationSegmenter:
                 available_munis = list(data.municipality.values)
                 if municipality_name not in available_munis:
                     logger.warning(f"Municipality '{municipality_name}' not found.")
-                    logger.info(f"Available: {available_munis[:5]}...")  # Show first 5
+                    logger.info(f"Available: {available_munis[:5]}...")
                     municipality_name = available_munis[0]
                     logger.info(f"Using: {municipality_name}")
                 
                 data = data.sel(municipality=municipality_name)
             
-            # Create valid mask with memory-efficient operations
             ndvi_data = data['ndvi']
-            
-            # Process in chunks to avoid memory issues
             valid_mask = self.create_valid_mask_chunked(ndvi_data)
-            
-            n_valid = int(valid_mask.sum())
-            n_total = valid_mask.size
-            
+            n_valid = int(valid_mask.sum())            
             #logger.info(f"Valid pixels: {n_valid}/{n_total} ({100*n_valid/n_total:.1f}%)")
             
             # Extract spatial coordinates
@@ -228,11 +189,10 @@ class VegetationSegmenter:
     def create_valid_mask_chunked(self, ndvi_data: xr.DataArray) -> np.ndarray:
         """Create valid mask using chunked processing to handle large datasets."""
         
-        # Use dask for efficient computation if available
+        # Use dask for efficient computation
         if hasattr(ndvi_data, 'chunks'):
             valid_mask = (~ndvi_data.isnull()).all(dim='time').compute()
         else:
-            # Fallback to numpy for smaller datasets
             valid_mask = ~np.isnan(ndvi_data.values).any(axis=0)
         
         return valid_mask.values if hasattr(valid_mask, 'values') else valid_mask
@@ -242,14 +202,14 @@ class VegetationSegmenter:
         
         coords = {}
         
-        # Get spatial dimensions (flexible naming)
+        # Get spatial dimensions
         spatial_dims = []
         for dim in ['x', 'y', 'longitude', 'latitude', 'lon', 'lat']:
             if dim in data.dims:
                 spatial_dims.append(dim)
                 coords[dim] = data.coords[dim].values
         
-        coords['spatial_dims'] = spatial_dims[:2]  # Use first two found
+        coords['spatial_dims'] = spatial_dims[:2]
         
         return coords
 
@@ -293,7 +253,7 @@ class VegetationSegmenter:
     def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, vegetation_coords: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
         """Perform spatially-constrained clustering."""
         
-        n_pixels = len(vegetation_pixels)
+        # n_pixels = len(vegetation_pixels)
         # logger.info(f"Clustering {n_pixels} vegetation pixels...")
         
         # Standardize temporal features
@@ -313,7 +273,7 @@ class VegetationSegmenter:
         # Perform DBSCAN clustering
         dbscan = DBSCAN(
             eps=self.params.eps,
-            min_samples=self.params.min_samples
+            min_pts=self.params.min_pts
         )
         cluster_labels = dbscan.fit_predict(combined_features)
         
@@ -405,8 +365,7 @@ class VegetationSegmenter:
                     'area': cluster['size'],
                     'mean_temporal_profile': np.mean(ndvi_profiles, axis=0),
                     'std_temporal_profile': np.std(ndvi_profiles, axis=0),
-                    'trend_score': self.calculate_trend_score(ndvi_profiles),
-                    'vegetation_type': self.classify_vegetation_type(cluster)
+                    'trend_score': self.calculate_trend_score(ndvi_profiles)
                 }
                 
                 vegetation_traces.append(trace)
@@ -429,22 +388,6 @@ class VegetationSegmenter:
         trend = np.polyfit(x, mean_profile, 1)[0]  # Slope of linear fit
         
         return trend
-    
-    def classify_vegetation_type(self, cluster: Dict) -> str:
-        """Simple vegetation type classification based on NDVI characteristics."""
-        
-        mean_ndvi = cluster['mean_ndvi']
-        variance = cluster['temporal_variance']
-        
-        if mean_ndvi > 0.7:
-            return "Dense Vegetation"
-        elif mean_ndvi > 0.5:
-            if variance > 0.02:
-                return "Seasonal Vegetation"
-            else:
-                return "Moderate Vegetation"
-        else:
-            return "Sparse Vegetation"
     
     def create_visualizations(self, vegetation_traces: List[Dict], 
                                       data: xr.Dataset, 
@@ -591,7 +534,7 @@ def segment_vegetation(netcdf_path: str = None,
             max_spatial_distance=parameters.max_spatial_distance,
             min_vegetation_ndvi=parameters.min_vegetation_ndvi,
             eps=parameters.eps,
-            min_samples=parameters.min_samples,
+            min_pts=parameters.min_pts,
             ndvi_variance_threshold=parameters.ndvi_variance_threshold,
             temporal_weight=parameters.temporal_weight,
             spatial_weight=parameters.spatial_weight,
@@ -608,7 +551,6 @@ def segment_vegetation(netcdf_path: str = None,
             municipality_name=municipality_name,
             create_visualizations=create_visualizations,
             output_dir=trend_output_dir,
-            is_dual_trend_processing=(len(trends_to_process) > 1),
             global_cluster_counter=global_cluster_counter
         )
         
@@ -618,30 +560,30 @@ def segment_vegetation(netcdf_path: str = None,
         
         results[trend] = trend_results
     
-    # Create combined analysis report and visualizations if processing multiple trends
-    if len(trends_to_process) > 1:
-        # Create combined JSON export first
-        if config.enable_json_export and data is not None:
-            logger.info("Creating combined JSON export...")
-            # Get configuration parameters for export
-            config_params = {
-                "min_cluster_size": parameters.min_cluster_size,
-                "max_spatial_distance": parameters.max_spatial_distance,
-                "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
-                "eps": parameters.eps,
-                "min_samples": parameters.min_samples,
-                "ndvi_variance_threshold": parameters.ndvi_variance_threshold,
-                "temporal_weight": parameters.temporal_weight,
-                "netcdf_path": netcdf_path,
-                "municipality_name": municipality_name
-            }
-            
-            # Export combined results to main output directory
-            json_exporter = VegetationClusterJSONExporter()
-            json_exporter.export_combined_clusters_to_json(
-                results, data, timestamped_output_dir, municipality_name, config_params
-            )
+    # Create JSON export
+    if config.enable_json_export and data is not None:
+        logger.info("Creating combined JSON export...")
+        # Get configuration parameters for export
+        config_params = {
+            "min_cluster_size": parameters.min_cluster_size,
+            "max_spatial_distance": parameters.max_spatial_distance,
+            "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
+            "eps": parameters.eps,
+            "min_pts": parameters.min_pts,
+            "ndvi_variance_threshold": parameters.ndvi_variance_threshold,
+            "temporal_weight": parameters.temporal_weight,
+            "netcdf_path": netcdf_path,
+            "municipality_name": municipality_name
+        }
         
+        # Export results
+        json_exporter = VegetationClusterJSONExporter()
+        json_exporter.export_combined_clusters_to_json(
+            results, data, timestamped_output_dir, municipality_name, config_params
+        )
+    
+    # Create additional visualizations and reports
+    if len(trends_to_process) > 1:
         static_viz = StaticVisualization(output_directory=timestamped_output_dir)
         static_viz.create_combined_analysis_report(results, municipality_name)
 
@@ -662,46 +604,21 @@ def segment_vegetation(netcdf_path: str = None,
             data=data,
             municipality_name=municipality_name
         )
-    else:
-        # For single trend processing, still create combined JSON export for consistency
-        if config.enable_json_export and data is not None:
-            logger.info("Creating combined JSON export for single trend...")
-            # Get configuration parameters for export
-            config_params = {
-                "min_cluster_size": parameters.min_cluster_size,
-                "max_spatial_distance": parameters.max_spatial_distance,
-                "min_vegetation_ndvi": parameters.min_vegetation_ndvi,
-                "eps": parameters.eps,
-                "min_samples": parameters.min_samples,
-                "ndvi_variance_threshold": parameters.ndvi_variance_threshold,
-                "temporal_weight": parameters.temporal_weight,
-                "netcdf_path": netcdf_path,
-                "municipality_name": municipality_name
-            }
-            
-            # Export combined results to main output directory
-            json_exporter = VegetationClusterJSONExporter()
-            json_exporter.export_combined_clusters_to_json(
-                results, data, timestamped_output_dir, municipality_name, config_params
-            )
     
     return results
 
 
-# Example usage
 if __name__ == "__main__":    
     config = get_config()
     
-    # Use config defaults (no parameter overrides) to respect YAML configuration
-    params = VegetationSegmentationParameters()  # Uses all config defaults
-    
-    # Run segmentation using config defaults for paths and municipality
+    # Get parameters from config and defaults
+    params = VegetationSegmentationParameters()
     results = segment_vegetation(
         parameters=params,
         create_visualizations=True
     )
     
-    # Handle the simplified return format - always contains trend keys
+    # Final summary log
     total_clusters = sum(len(clusters) for clusters in results.values())
     if total_clusters == 0:
         logger.warning("No vegetation clusters found. Check your data and parameters.")

@@ -18,7 +18,6 @@ from ..config_loader import get_config
 
 warnings.filterwarnings('ignore')
 
-# Set style
 plt.style.use('default')
 
 
@@ -38,7 +37,6 @@ class StaticVisualization:
     
     def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
         """Safely extract pixels from trace data, handling different formats."""
-        # Check multiple possible field names
         for field_name in ['pixels', 'coordinates']:
             pixels = trace.get(field_name, [])
             if pixels is not None and len(pixels) > 0:
@@ -107,7 +105,6 @@ class StaticVisualization:
         visualizations = {}
         
         try:
-            # 1. Interactive NDVI evolution plot (HTML)
             ndvi_html_file = self.create_interactive_ndvi_evolution(traces, data, municipality_name)
             if ndvi_html_file:
                 visualizations["ndvi_evolution_html"] = ndvi_html_file
@@ -134,7 +131,7 @@ class StaticVisualization:
         # Configuration parameters section
         param_sections = [
             ("Segmentation Parameters", ['min_cluster_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold']),
-            ("Clustering Parameters", ['eps', 'min_samples', 'temporal_weight', 'spatial_weight']),
+            ("Clustering Parameters", ['eps', 'min_pts', 'temporal_weight', 'spatial_weight']),
             ("Data Parameters", ['netcdf_path', 'municipalities_data', 'municipality', 'output_dir']),
             ("Analysis Parameters", ['chunk_size', 'max_pixels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
         ]
@@ -192,7 +189,6 @@ class StaticVisualization:
         """Create an interactive HTML plot of NDVI evolution over time with toggleable cluster lines."""
 
         try:
-            # Extract time axis from data
             time_axis = None
             time_labels = None
             

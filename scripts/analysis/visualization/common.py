@@ -207,7 +207,7 @@ class CommonVisualization:
                     
                     # Create data point for each year (except first year)
                     for year_idx, change in enumerate(ndvi_changes):
-                        year = time_coords[year_idx + 1]  # +1 because change is relative to previous year
+                        year = time_coords[year_idx + 1]
                         
                         cluster_data.append({
                             'cluster_id': actual_cluster_id + 1,
@@ -224,14 +224,13 @@ class CommonVisualization:
         # Create DataFrame
         df = pd.DataFrame(cluster_data) 
         
-        # Check if we have any data to visualize
         if df.empty:
             logger.warning("No cluster data found for interactive temporal trend map")
             return
 
         fig = go.Figure()
         
-        # Define color scale: red (-1) to white (0) to green (+1)
+        # Define color scale
         colorscale = [
             [0.0, '#6B0000'],
             [0.37, '#8B0000'],
@@ -324,7 +323,6 @@ class CommonVisualization:
             margin=dict(l=60, r=60, t=80, b=60)
         )
         
-        # Save
         fig.write_html(
             output_file,
             include_plotlyjs='cdn',
@@ -338,8 +336,6 @@ class CommonVisualization:
         
         logger.success(f"Interactive temporal trend map saved successfully")
         return str(output_file)
-
-
 
 
     def create_spatial_distribution_map(self, results: Dict[str, List[Dict]], data: Any, municipality_name: str) -> str:
