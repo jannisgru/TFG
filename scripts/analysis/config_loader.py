@@ -23,14 +23,13 @@ class SegmentationConfig:
     max_spatial_distance: int
     min_vegetation_ndvi: float
     ndvi_variance_threshold: float
-    n_clusters: Optional[int]
-    temporal_weight: float
     ndvi_trend_filter: Optional[str]
     
     # Clustering parameters (defined in YAML)
+    eps: float  # DBSCAN eps parameter
+    min_samples: int  # DBSCAN min_samples parameter
+    temporal_weight: float
     spatial_weight: float
-    random_state: int
-    n_init: int
     
     # Processing parameters (defined in YAML)
     chunk_size: int
@@ -149,17 +148,16 @@ class ConfigLoader:
             'max_spatial_distance': seg_params['max_spatial_distance'],
             'min_vegetation_ndvi': seg_params['min_vegetation_ndvi'],
             'ndvi_variance_threshold': seg_params['ndvi_variance_threshold'],
-            'n_clusters': seg_params['n_clusters'],
-            'temporal_weight': seg_params['temporal_weight'],
             'ndvi_trend_filter': seg_params['ndvi_trend_filter'],
         })
         
         # Clustering parameters (required from YAML)
         cluster_params = config_data.get('clustering', {})
         flattened.update({
+            'eps': cluster_params['eps'],
+            'min_samples': cluster_params['min_samples'],
+            'temporal_weight': cluster_params['temporal_weight'],
             'spatial_weight': cluster_params['spatial_weight'],
-            'random_state': cluster_params['random_state'],
-            'n_init': cluster_params['n_init'],
         })
         
         # Processing parameters (required from YAML)

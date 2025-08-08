@@ -4,7 +4,7 @@ Spatiotemporal cube segmentation for vegetation analysis using NDVI clustering w
 
 ## Overview
 
-This package segments satellite NDVI time series into spatially and temporally coherent clusters representing vegetation patches with similar NDVI dynamics and spatial proximity.
+This package segments satellite NDVI time series into spatially and temporally coherent clusters representing vegetation patches with similar NDVI dynamics and spatial proximity. Uses DBSCAN clustering for robust density-based segmentation that automatically determines the number of clusters.
 
 ## Example Interactive Visualization
 
@@ -16,23 +16,24 @@ This package segments satellite NDVI time series into spatially and temporally c
 2. **Vegetation Filtering**: Selects pixels with mean NDVI above threshold and sufficient temporal variance
 3. **Clustering**: 
    - Combines NDVI time series and spatial coordinates, weighted by `temporal_weight` and `spatial_weight`
-   - Uses K-means to cluster pixels into NDVI-similar and spatially close groups
-   - Number of clusters controlled by `n_clusters` parameter
+   - Uses DBSCAN to cluster pixels into NDVI-similar and spatially close groups
+   - Number of clusters determined automatically by DBSCAN parameters (`eps` and `min_samples`)
 4. **Spatial Constraints**: Ensures clusters remain spatially coherent within `max_spatial_distance`
 5. **Export & Visualization**: Results exported as JSON with static (Matplotlib) and interactive (Plotly) visualizations
 
-## Clustering Algorithm (K-means)
+## Clustering Algorithm (DBSCAN)
 
-The core segmentation uses K-means clustering on combined NDVI and spatial features:
+The core segmentation uses DBSCAN clustering on combined NDVI and spatial features:
 
 1. **Feature Construction**: Each pixel gets a feature vector combining NDVI time series and spatial coordinates (x, y)
-2. **K-means Clustering**: 
-   - Partitional clustering that groups pixels into k clusters based on feature similarity
-   - Minimizes within-cluster sum of squares
-   - Requires pre-specified number of clusters (`n_clusters`)
-3. **Parameters**: Number of clusters controlled by `n_clusters`, with spatial coherence enforced via `max_spatial_distance`
+2. **DBSCAN Clustering**: 
+   - Density-based clustering that groups pixels based on feature similarity and density
+   - Automatically determines the number of clusters based on data density
+   - Can identify and filter out noise points (outliers)
+   - Controlled by `eps` (maximum distance between neighbors) and `min_samples` (minimum points to form cluster)
+3. **Parameters**: Cluster formation controlled by `eps` and `min_samples`, with spatial coherence enforced via `max_spatial_distance`
 
-K-means is efficient for large datasets and produces compact, spherical clusters with consistent sizes.
+DBSCAN is robust to noise and can find clusters of varying shapes and sizes, making it well-suited for irregular vegetation patterns.
 
 ## Key Parameters
 
@@ -45,16 +46,14 @@ Configure in `segment_config.yaml`:
 | `max_spatial_distance` | Maximum pixel distance for spatial clustering |
 | `min_vegetation_ndvi` | Minimum NDVI threshold for vegetation |
 | `ndvi_variance_threshold` | Minimum NDVI variance to include pixel |
-| `temporal_weight` | Weight for NDVI vs. spatial features |
-| `n_clusters` | Target cluster count (required for K-means) |
 
 ### Clustering Parameters
 | Parameter | Description |
 |-----------|-------------|
-| `spatial_weight` | Weight for spatial coordinates in feature space |
+| `eps` | DBSCAN eps: maximum distance between samples to be neighbors |
+| `min_samples` | DBSCAN min_samples: minimum samples in neighborhood to form cluster |
 | `temporal_weight` | Weight for temporal vs spatial features (0-1) |
-| `random_state` | Random seed for K-means reproducibility |
-| `n_init` | Number of K-means initializations |
+| `spatial_weight` | Weight for spatial coordinates in feature space |
 
 
 ## File Structure
@@ -82,11 +81,24 @@ analysis/
 
 ## Parameter Tuning Tips
 
-- **`temporal_weight` vs `spatial_weight`**: Balance NDVI similarity vs. spatial proximity
-- **`max_spatial_distance`**: Higher values allow more spatial spread
-- **`n_clusters`**: Must be specified for K-means; determines final number of clusters
-- **`min_cube_size`**: Prevents tiny/noisy clusters through post-processing
-- **`ndvi_variance_threshold`**: Filters static vegetation
+**Segmentation Parameters:**
+- **`max_spatial_distance`**: Higher values allow more spatial spread in post-processing
+- **`min_cube_size`**: Prevents tiny/noisy clusters through post-processing  
+- **`min_vegetation_ndvi`**: Threshold for initial vegetation pixel selection
+- **`ndvi_variance_threshold`**: Filters static vegetation pixels
+
+**Clustering Parameters:**
+- **`eps`**: Controls cluster density - smaller values create tighter, more clusters
+- **`min_samples`**: Minimum points needed to form a cluster - higher values reduce noise but may merge small clusters
+- **`temporal_weight`**: Weight for NDVI time series features (higher = more NDVI similarity focus)
+- **`spatial_weight`**: Weight for spatial coordinates (higher = more spatial compactness)
+
+### DBSCAN Parameter Guidelines
+- Start with `eps=1.0`, `min_samples=20`, `temporal_weight=0.1`, `spatial_weight=0.4` for initial testing
+- If too many small clusters: increase `eps` or decrease `min_samples`
+- If too few large clusters: decrease `eps` or increase `min_samples`  
+- Balance temporal vs spatial features: increase `temporal_weight` for more NDVI similarity, increase `spatial_weight` for more compact clusters
+- Monitor noise points in logs - too many may indicate poor parameter tuning
 
 ## Data Requirements
 

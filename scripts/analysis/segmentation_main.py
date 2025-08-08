@@ -15,7 +15,7 @@ import gc
 from loguru import logger
 import datetime
 import traceback
-from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 from scipy.spatial.distance import cdist
 from scipy.stats import linregress
@@ -34,8 +34,10 @@ class VegetationSegmentationParameters:
     min_cube_size: int = None
     ndvi_variance_threshold: float = None
     chunk_size: int = None
-    n_clusters: int = None
+    eps: float = None  # DBSCAN eps parameter (maximum distance between samples)
+    min_samples: int = None  # DBSCAN min_samples parameter
     temporal_weight: float = None
+    spatial_weight: float = None
     ndvi_trend_filter: Optional[str] = None  # 'greening', 'browning', or None
     
     def __post_init__(self):
@@ -52,10 +54,14 @@ class VegetationSegmentationParameters:
             self.ndvi_variance_threshold = config.ndvi_variance_threshold
         if self.chunk_size is None:
             self.chunk_size = config.chunk_size
-        if self.n_clusters is None:
-            self.n_clusters = config.n_clusters
+        if self.eps is None:
+            self.eps = config.eps
+        if self.min_samples is None:
+            self.min_samples = config.min_samples
         if self.temporal_weight is None:
             self.temporal_weight = config.temporal_weight
+        if self.spatial_weight is None:
+            self.spatial_weight = config.spatial_weight
         if self.ndvi_trend_filter is None:
             self.ndvi_trend_filter = config.ndvi_trend_filter
 
@@ -128,7 +134,8 @@ class VegetationSegmenter:
                         "min_cube_size": self.params.min_cube_size,
                         "max_spatial_distance": self.params.max_spatial_distance,
                         "min_vegetation_ndvi": self.params.min_vegetation_ndvi,
-                        "n_clusters": self.params.n_clusters,
+                        "eps": self.params.eps,
+                        "min_samples": self.params.min_samples,
                         "ndvi_variance_threshold": self.params.ndvi_variance_threshold,
                         "temporal_weight": self.params.temporal_weight,
                         "netcdf_path": netcdf_path,
@@ -296,20 +303,28 @@ class VegetationSegmenter:
         # Combine temporal and spatial features with weighting
         combined_features = np.column_stack([
             temporal_features * self.params.temporal_weight,
-            spatial_features * (1 - self.params.temporal_weight)
+            spatial_features * self.params.spatial_weight
         ])
         
-        # Perform k-means clustering
-        n_clusters = min(self.params.n_clusters, n_pixels // self.params.min_cube_size)
-        if n_clusters < 2:
-            n_clusters = 2
-        
-        kmeans = KMeans(
-            n_clusters=n_clusters, 
-            random_state=self.config.random_state,
-            n_init=self.config.n_init
+        # Perform DBSCAN clustering
+        dbscan = DBSCAN(
+            eps=self.params.eps,
+            min_samples=self.params.min_samples
         )
-        cluster_labels = kmeans.fit_predict(combined_features)
+        cluster_labels = dbscan.fit_predict(combined_features)
+        
+        # Filter out noise points (labeled as -1 by DBSCAN)
+        noise_mask = cluster_labels != -1
+        if np.sum(noise_mask) == 0:
+            logger.warning("DBSCAN found no clusters, all points classified as noise")
+            return []
+        
+        # Remove noise points from further processing
+        cluster_labels = cluster_labels[noise_mask]
+        vegetation_coords = vegetation_coords[noise_mask]
+        vegetation_pixels = vegetation_pixels[noise_mask]
+        
+        logger.info(f"DBSCAN found {len(np.unique(cluster_labels))} clusters, filtered out {np.sum(~noise_mask)} noise points")
         
         # Apply spatial constraints - filter clusters based on spatial distance
         clusters = self.apply_spatial_constraints(
@@ -571,9 +586,11 @@ def segment_vegetation(netcdf_path: str = None,
             min_cube_size=parameters.min_cube_size,
             max_spatial_distance=parameters.max_spatial_distance,
             min_vegetation_ndvi=parameters.min_vegetation_ndvi,
-            n_clusters=parameters.n_clusters,
+            eps=parameters.eps,
+            min_samples=parameters.min_samples,
             ndvi_variance_threshold=parameters.ndvi_variance_threshold,
             temporal_weight=parameters.temporal_weight,
+            spatial_weight=parameters.spatial_weight,
             ndvi_trend_filter=trend
         )
         
