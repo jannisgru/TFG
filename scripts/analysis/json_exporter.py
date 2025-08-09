@@ -2,7 +2,7 @@
 JSON Export Module for Vegetation Segmentation Results
 
 Handles export of vegetation cluster/trace analysis results to structured JSON files for downstream analysis, visualization, 
-and reproducibility. Supports metadata, NDVI profiles, pixel-level data, and config export.
+and reproducibility. Supports metadata, NDVI profiles, voxel-level data, and config export.
 """
 
 import json
@@ -22,7 +22,7 @@ class VegetationClusterJSONExporter:
     This class provides functionality to export cluster analysis results including:
     - Cluster metadata and summary statistics
     - Temporal NDVI profiles for each cluster
-    - Individual pixel coordinates (lat/lon) and NDVI time series
+    - Individual trace coordinates (lat/lon) and NDVI time series
     - Configuration parameters used for analysis
     """
     
@@ -51,7 +51,7 @@ class VegetationClusterJSONExporter:
             Path to the exported JSON file
         """        
         # Get configuration settings
-        include_pixels = self.config.include_pixel_level_data
+        include_voxels = self.config.include_voxel_level_data
         json_indent = self.config.json_indent
         
         # Extract time coordinates (years)
@@ -59,12 +59,12 @@ class VegetationClusterJSONExporter:
         
         # Prepare the main data structure
         cluster_data = self._create_metadata_structure(
-            municipality_name, vegetation_traces, time_coords, include_pixels, parameters
+            municipality_name, vegetation_traces, time_coords, include_voxels, parameters
         )
         
         # Process each cluster
         for i, trace in enumerate(vegetation_traces):            
-            cluster_info = self._process_cluster(trace, data, time_coords, include_pixels, i)
+            cluster_info = self._process_cluster(trace, data, time_coords, include_voxels, i)
             cluster_data["clusters"].append(cluster_info)
         
         # Save to JSON file
@@ -92,7 +92,7 @@ class VegetationClusterJSONExporter:
             Path to the exported JSON file
         """        
         # Get configuration settings
-        include_pixels = self.config.include_pixel_level_data
+        include_voxels = self.config.include_voxel_level_data
         json_indent = self.config.json_indent
         
         # Extract time coordinates (years)
@@ -130,7 +130,7 @@ class VegetationClusterJSONExporter:
             
             # Process each cluster for this trend
             for i, trace in enumerate(vegetation_traces):            
-                cluster_info = self._process_cluster(trace, data, time_coords, include_pixels, i)
+                cluster_info = self._process_cluster(trace, data, time_coords, include_voxels, i)
                 trend_data["clusters"].append(cluster_info)
             
             cluster_data["trends"][trend_type] = trend_data
@@ -154,7 +154,7 @@ class VegetationClusterJSONExporter:
                                  municipality_name: str, 
                                  vegetation_traces: List[Dict], 
                                  time_coords: List[int], 
-                                 include_pixels: bool, 
+                                 include_voxels: bool, 
                                  parameters: Dict) -> Dict[str, Any]:
         """Create the main JSON data structure with metadata."""
         return {
@@ -172,26 +172,26 @@ class VegetationClusterJSONExporter:
                         trace: Dict, 
                         data: xr.Dataset, 
                         time_coords: List[int], 
-                        include_pixels: bool, 
+                        include_voxels: bool, 
                         cluster_index: int) -> Dict[str, Any]:
         """Process a single cluster and return its JSON representation."""
-        # Get cluster pixel coordinates and NDVI profiles
-        coordinates, pixel_ndvi_profiles = self._extract_cluster_data(trace)
+        # Get cluster spatial coordinates and NDVI profiles
+        coordinates, trace_ndvi_profiles = self._extract_cluster_data(trace)
         # Initialize cluster info structure, pass time_coords
         cluster_info = self._create_cluster_info_structure(trace, coordinates, cluster_index, time_coords)
         # Add temporal profile data
         self._add_temporal_profile_data(cluster_info, trace, time_coords)
-        # Process individual pixels if enabled
-        if include_pixels and coordinates and pixel_ndvi_profiles:
-            self._process_cluster_pixels(
-                cluster_info, coordinates, pixel_ndvi_profiles, data, time_coords
+        # Process individual traces if enabled
+        if include_voxels and coordinates and trace_ndvi_profiles:
+            self._process_cluster_traces(
+                cluster_info, coordinates, trace_ndvi_profiles, data, time_coords
             )
         return cluster_info
     
     def _extract_cluster_data(self, trace: Dict) -> tuple:
         """Extract coordinates and NDVI profiles from cluster data."""
         
-        # Get cluster pixel coordinates
+        # Get cluster spatial coordinates
         coordinates = trace.get('coordinates', [])
         if hasattr(coordinates, 'tolist'):
             coordinates = coordinates.tolist()
@@ -200,14 +200,14 @@ class VegetationClusterJSONExporter:
         elif isinstance(coordinates, set):
             coordinates = list(coordinates)
         
-        # Get individual pixel NDVI profiles
-        pixel_ndvi_profiles = trace.get('ndvi_profiles', [])
-        if hasattr(pixel_ndvi_profiles, 'tolist'):
-            pixel_ndvi_profiles = pixel_ndvi_profiles.tolist()
-        elif isinstance(pixel_ndvi_profiles, np.ndarray):
-            pixel_ndvi_profiles = pixel_ndvi_profiles.tolist()
+        # Get individual trace NDVI profiles
+        trace_ndvi_profiles = trace.get('ndvi_profiles', [])
+        if hasattr(trace_ndvi_profiles, 'tolist'):
+            trace_ndvi_profiles = trace_ndvi_profiles.tolist()
+        elif isinstance(trace_ndvi_profiles, np.ndarray):
+            trace_ndvi_profiles = trace_ndvi_profiles.tolist()
         
-        return coordinates, pixel_ndvi_profiles
+        return coordinates, trace_ndvi_profiles
     
     def _create_cluster_info_structure(self, trace: Dict, coordinates: List, cluster_index: int, time_coords: List[int]) -> Dict[str, Any]:
         """Create the basic cluster information structure."""
@@ -263,17 +263,17 @@ class VegetationClusterJSONExporter:
     
     def _calculate_overall_cluster_std(self, trace: Dict) -> float:
         """
-        Calculate overall standard deviation for the cluster across all pixels and all years.
+        Calculate overall standard deviation for the cluster across all traces and all years.
         """
         try:
-            # Get individual pixel NDVI profiles
-            pixel_ndvi_profiles = trace.get('ndvi_profiles', [])
-            if pixel_ndvi_profiles is None or len(pixel_ndvi_profiles) == 0:
+            # Get individual trace NDVI profiles
+            trace_ndvi_profiles = trace.get('ndvi_profiles', [])
+            if trace_ndvi_profiles is None or len(trace_ndvi_profiles) == 0:
                 return None
             
-            if isinstance(pixel_ndvi_profiles, np.ndarray):
+            if isinstance(trace_ndvi_profiles, np.ndarray):
                 # Flatten the entire array and filter out NaN values
-                all_values = pixel_ndvi_profiles.flatten()
+                all_values = trace_ndvi_profiles.flatten()
                 valid_values = all_values[~np.isnan(all_values)]
                 
                 if len(valid_values) > 1:
@@ -281,7 +281,7 @@ class VegetationClusterJSONExporter:
                 else:
                     return None
             else:
-                self.logger.warning(f"Unexpected ndvi_profiles type: {type(pixel_ndvi_profiles)}")
+                self.logger.warning(f"Unexpected ndvi_profiles type: {type(trace_ndvi_profiles)}")
                 return None
                 
         except Exception as e:
@@ -314,61 +314,61 @@ class VegetationClusterJSONExporter:
             for year, ndvi_val in zip(time_coords, ndvi_profile):
                 cluster_info["temporal_profile"]["mean_ndvi_per_year"][str(year)] = ndvi_val
 
-    def _process_cluster_pixels(self, 
+    def _process_cluster_traces(self, 
                            cluster_info: Dict, 
                            coordinates: List, 
-                           pixel_ndvi_profiles: List, 
+                           trace_ndvi_profiles: List, 
                            data: xr.Dataset, 
                            time_coords: List[int]):
-        """Process individual pixels within a cluster."""
+        """Process individual spatial coordinates within a cluster."""
         
         # Calculate cluster mean NDVI per year for std deviation calculation
-        cluster_means_per_year = self._calculate_cluster_means_per_year(pixel_ndvi_profiles, time_coords)
+        cluster_means_per_year = self._calculate_cluster_means_per_year(trace_ndvi_profiles, time_coords)
         
-        for pixel_idx, (pixel_coord, pixel_ndvi_series) in enumerate(zip(coordinates, pixel_ndvi_profiles)):
-            if not isinstance(pixel_coord, (list, tuple)) or len(pixel_coord) < 2:
-                self.logger.warning(f"Invalid pixel coordinate format: {pixel_coord}")
+        for trace_idx, (coord, trace_ndvi_series) in enumerate(zip(coordinates, trace_ndvi_profiles)):
+            if not isinstance(coord, (list, tuple)) or len(coord) < 2:
+                self.logger.warning(f"Invalid coordinate format: {coord}")
                 continue
             
-            y_coord, x_coord = int(pixel_coord[0]), int(pixel_coord[1])
+            y_coord, x_coord = int(coord[0]), int(coord[1])
             
-            # Process NDVI time series for this pixel
-            pixel_ndvi_dict, pixel_ndvi_values = self._process_pixel_ndvi_series(
-                pixel_ndvi_series, time_coords
+            # Process NDVI time series for this spatial coordinate
+            trace_ndvi_dict, trace_ndvi_values = self._process_trace_ndvi_series(
+                trace_ndvi_series, time_coords
             )
             
             # Calculate standard deviation from cluster mean for each year
-            std_from_cluster = self._calculate_pixel_std_from_cluster(
-                pixel_ndvi_values, cluster_means_per_year, time_coords
+            std_from_cluster = self._calculate_trace_std_from_cluster(
+                trace_ndvi_values, cluster_means_per_year, time_coords
             )
             
-            # Convert pixel coordinates to latitude/longitude
-            lat, lon = self._convert_pixel_to_latlon(data, y_coord, x_coord)
+            # Convert spatial coordinates to latitude/longitude
+            lat, lon = self._convert_coordinates_to_latlon(data, y_coord, x_coord)
             
             # Extract natural park information
             natural_park_info = self._extract_natural_park_info(data, y_coord, x_coord)
             
-            # Create pixel information structure
-            pixel_info = self._create_pixel_info_structure(
-                pixel_idx, lat, lon, pixel_ndvi_dict, pixel_ndvi_values, std_from_cluster, natural_park_info
+            # Create trace information structure
+            trace_info = self._create_trace_info_structure(
+                trace_idx, lat, lon, trace_ndvi_dict, trace_ndvi_values, std_from_cluster, natural_park_info
             )
             
-            cluster_info["traces"].append(pixel_info)
+            cluster_info["traces"].append(trace_info)
 
-    def _calculate_cluster_means_per_year(self, pixel_ndvi_profiles: List, time_coords: List[int]) -> List[float]:
+    def _calculate_cluster_means_per_year(self, trace_ndvi_profiles: List, time_coords: List[int]) -> List[float]:
         """Calculate cluster mean NDVI for each year."""
         cluster_means = []
         
         for year_idx in range(len(time_coords)):
             year_values = []
-            for pixel_profile in pixel_ndvi_profiles:
-                if hasattr(pixel_profile, 'tolist'):
-                    pixel_profile = pixel_profile.tolist()
-                elif isinstance(pixel_profile, np.ndarray):
-                    pixel_profile = pixel_profile.tolist()
+            for trace_profile in trace_ndvi_profiles:
+                if hasattr(trace_profile, 'tolist'):
+                    trace_profile = trace_profile.tolist()
+                elif isinstance(trace_profile, np.ndarray):
+                    trace_profile = trace_profile.tolist()
                 
-                if year_idx < len(pixel_profile) and pixel_profile[year_idx] is not None:
-                    year_values.append(pixel_profile[year_idx])
+                if year_idx < len(trace_profile) and trace_profile[year_idx] is not None:
+                    year_values.append(trace_profile[year_idx])
             
             if year_values:
                 cluster_means.append(np.mean(year_values))
@@ -377,46 +377,46 @@ class VegetationClusterJSONExporter:
         
         return cluster_means
 
-    def _calculate_pixel_std_from_cluster(self, pixel_ndvi_values: List, cluster_means: List[float], time_coords: List[int]) -> Dict[str, float]:
-        """Calculate standard deviation of pixel NDVI from cluster mean for each year."""
+    def _calculate_trace_std_from_cluster(self, trace_ndvi_values: List, cluster_means: List[float], time_coords: List[int]) -> Dict[str, float]:
+        """Calculate standard deviation of trace NDVI from cluster mean for each year."""
         std_from_cluster = {}
         
         for i, year in enumerate(time_coords):
-            if (i < len(pixel_ndvi_values) and pixel_ndvi_values[i] is not None and 
+            if (i < len(trace_ndvi_values) and trace_ndvi_values[i] is not None and 
                 i < len(cluster_means) and cluster_means[i] is not None):
-                std_val = abs(pixel_ndvi_values[i] - cluster_means[i])
+                std_val = abs(trace_ndvi_values[i] - cluster_means[i])
                 std_from_cluster[str(year)] = float(std_val)
             else:
                 std_from_cluster[str(year)] = None
         
         return std_from_cluster
 
-    def _process_pixel_ndvi_series(self, pixel_ndvi_series, time_coords: List[int]) -> tuple:
-        """Process NDVI time series for a single pixel."""
+    def _process_trace_ndvi_series(self, trace_ndvi_series, time_coords: List[int]) -> tuple:
+        """Process NDVI time series for a single spatial coordinate."""
         
-        pixel_ndvi_dict = {}
-        pixel_ndvi_values = []
+        trace_ndvi_dict = {}
+        trace_ndvi_values = []
         
-        # Convert pixel NDVI series to proper format
-        if hasattr(pixel_ndvi_series, 'tolist'):
-            pixel_ndvi_series = pixel_ndvi_series.tolist()
-        elif isinstance(pixel_ndvi_series, np.ndarray):
-            pixel_ndvi_series = pixel_ndvi_series.tolist()
+        # Convert trace NDVI series to proper format
+        if hasattr(trace_ndvi_series, 'tolist'):
+            trace_ndvi_series = trace_ndvi_series.tolist()
+        elif isinstance(trace_ndvi_series, np.ndarray):
+            trace_ndvi_series = trace_ndvi_series.tolist()
         
         # Create year-to-NDVI mapping
-        for year, ndvi_val in zip(time_coords, pixel_ndvi_series[:len(time_coords)]):
+        for year, ndvi_val in zip(time_coords, trace_ndvi_series[:len(time_coords)]):
             # Convert numpy types to Python native types
             if hasattr(ndvi_val, 'item'):
                 ndvi_val = ndvi_val.item()
             ndvi_val = float(ndvi_val) if not np.isnan(ndvi_val) else None
             
-            pixel_ndvi_dict[str(int(year))] = ndvi_val
-            pixel_ndvi_values.append(ndvi_val)
+            trace_ndvi_dict[str(int(year))] = ndvi_val
+            trace_ndvi_values.append(ndvi_val)
         
-        return pixel_ndvi_dict, pixel_ndvi_values
+        return trace_ndvi_dict, trace_ndvi_values
     
-    def _convert_pixel_to_latlon(self, data: xr.Dataset, y_coord: int, x_coord: int) -> tuple:
-        """Convert pixel coordinates to latitude/longitude."""
+    def _convert_coordinates_to_latlon(self, data: xr.Dataset, y_coord: int, x_coord: int) -> tuple:
+        """Convert spatial coordinates to latitude/longitude."""
         
         try:
             # Get latitude and longitude from the dataset coordinates
@@ -424,13 +424,13 @@ class VegetationClusterJSONExporter:
             lon = float(data.x.isel(x=x_coord).values)
         except (IndexError, KeyError, AttributeError):
             # Return null if coordinates are not found
-            self.logger.warning(f"Could not convert pixel coordinates ({y_coord}, {x_coord}) to lat/lon.")
+            self.logger.warning(f"Could not convert coordinates ({y_coord}, {x_coord}) to lat/lon.")
             lat, lon = None, None
         
         return lat, lon
     
     def _extract_natural_park_info(self, data: xr.Dataset, y_coord: int, x_coord: int) -> Dict[str, Any]:
-        """Extract natural park information for a pixel coordinate."""
+        """Extract natural park information for a spatial coordinate."""
         natural_info = {
             "PEIN": None,
             "XPN": None
@@ -492,44 +492,44 @@ class VegetationClusterJSONExporter:
                             natural_info["XPN"] = xpn_str
                             
         except Exception as e:
-            self.logger.warning(f"Could not extract natural park info for pixel ({y_coord}, {x_coord}): {e}")
+            self.logger.warning(f"Could not extract natural park info for coordinates ({y_coord}, {x_coord}): {e}")
         
         return natural_info
 
-    def _create_pixel_info_structure(self, 
-                                   pixel_idx: int, 
+    def _create_trace_info_structure(self, 
+                                   trace_idx: int, 
                                    lat: float, 
                                    lon: float, 
-                                   pixel_ndvi_dict: Dict, 
-                                   pixel_ndvi_values: List,
+                                   trace_ndvi_dict: Dict, 
+                                   trace_ndvi_values: List,
                                    std_from_cluster: Dict,
                                    natural_park_info: Dict) -> Dict[str, Any]:
-        """Create the pixel information structure."""
+        """Create the trace information structure."""
         
-        # Calculate pixel statistics (without mean_ndvi)
-        pixel_stats = self._calculate_pixel_statistics(pixel_ndvi_values)
-        # Remove mean_ndvi from pixel statistics
-        if 'mean_ndvi' in pixel_stats:
-            del pixel_stats['mean_ndvi']
+        # Calculate trace statistics (without mean_ndvi)
+        trace_stats = self._calculate_trace_statistics(trace_ndvi_values)
+        # Remove mean_ndvi from trace statistics
+        if 'mean_ndvi' in trace_stats:
+            del trace_stats['mean_ndvi']
         
-        pixel_info = {
-            "trace_id": pixel_idx,
+        trace_info = {
+            "trace_id": trace_idx,
             "coordinates": {
                 "latitude": lat,
                 "longitude": lon
             },
-            "trace_statistics": pixel_stats,
+            "trace_statistics": trace_stats,
             "natural_park_info": natural_park_info,
-            "ndvi_time_series": pixel_ndvi_dict,
+            "ndvi_time_series": trace_ndvi_dict,
             "std_from_cluster_per_year": std_from_cluster
         }
         
-        return pixel_info
+        return trace_info
     
-    def _calculate_pixel_statistics(self, pixel_ndvi_values: List) -> Dict[str, float]:
-        """Calculate statistics for a pixel's NDVI time series."""
+    def _calculate_trace_statistics(self, trace_ndvi_values: List) -> Dict[str, float]:
+        """Calculate statistics for a trace's NDVI time series."""
         
-        valid_values = [v for v in pixel_ndvi_values if v is not None]
+        valid_values = [v for v in trace_ndvi_values if v is not None]
         
         if not valid_values:
             return {

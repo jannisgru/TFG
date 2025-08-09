@@ -42,15 +42,15 @@ class InteractiveVisualization:
             return data.tolist() if data.size > 0 else (default or [])
         return data if data else (default or [])
     
-    def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
-        """Extract pixel coordinates, checking multiple possible keys."""
-        for key in ['pixels', 'coordinates']:
-            pixels = self._extract_safe_data(trace, key, [])
-            if pixels:
-                if isinstance(pixels[0], (list, tuple)) and len(pixels[0]) == 2:
-                    return [tuple(p) for p in pixels]
-                elif len(pixels) == 2 and isinstance(pixels[0], (int, float)):
-                    return [tuple(pixels)]
+    def _get_coordinates_safely(self, trace: Dict) -> List[Tuple[int, int]]:
+        """Extract spatial coordinates, checking multiple possible keys."""
+        for key in ['voxels', 'coordinates']:
+            coordinates = self._extract_safe_data(trace, key, [])
+            if coordinates:
+                if isinstance(coordinates[0], (list, tuple)) and len(coordinates[0]) == 2:
+                    return [tuple(p) for p in coordinates]
+                elif len(coordinates) == 2 and isinstance(coordinates[0], (int, float)):
+                    return [tuple(coordinates)]
         return []
     
     def _get_ndvi_profile(self, trace: Dict) -> List[float]:
@@ -62,8 +62,8 @@ class InteractiveVisualization:
         return []
     
     def _is_valid_trace(self, trace: Dict) -> bool:
-        """Check if trace has both valid pixels and NDVI data."""
-        return len(self._get_pixels_safely(trace)) > 0 and len(self._get_ndvi_profile(trace)) > 0
+        """Check if trace has both valid coordinates and NDVI data."""
+        return len(self._get_coordinates_safely(trace)) > 0 and len(self._get_ndvi_profile(trace)) > 0
     
     def create_all_visualizations(self, traces: Union[List[Dict], List[Dict]], data: Union[xr.Dataset, str], 
                                 municipality_name: str = "Unknown") -> Dict[str, str]:
@@ -131,12 +131,12 @@ class InteractiveVisualization:
         
         for i, trace in enumerate(traces):
             # Process dictionary traces
-            pixels = self._get_pixels_safely(trace)
+            coordinates = self._get_coordinates_safely(trace)
             ndvi_profile = self._get_ndvi_profile(trace)
             trace_dict = {
                 'id': trace.get('id', i),
-                'pixels': pixels,
-                'area': trace.get('area', trace.get('size', len(pixels))),
+                'voxels': coordinates,
+                'area': trace.get('area', trace.get('size', len(coordinates))),
                 'ndvi_profile': ndvi_profile,
                 'mean_ndvi': trace.get('mean_ndvi', np.mean(ndvi_profile) if ndvi_profile else 0.5),
                 'temporal_extent': trace.get('temporal_extent', (0, time_length)),
@@ -177,8 +177,8 @@ class InteractiveVisualization:
             Z_raster = np.full_like(X_raster, 1983)
             self.create_basemap(data, fig, X_raster, Y_raster, Z_raster)
 
-        # Transform pixel coordinates to geographic coordinates
-        def transform_pixel_to_geo(px_y, px_x, data):
+        # Transform spatial coordinates to geographic coordinates
+        def transform_coordinates_to_geo(px_y, px_x, data):
             if hasattr(data, 'x') and hasattr(data, 'y'):
                 x_coords = np.array(data.x)
                 y_coords = np.array(data.y)
@@ -208,7 +208,7 @@ class InteractiveVisualization:
         max_clusters = config.max_clusters_3d
 
         for trace_idx, trace in enumerate(valid_traces[:max_clusters]):
-            pixels = self._get_pixels_safely(trace)
+            coordinates = self._get_coordinates_safely(trace)
             ndvi_profile = self._get_ndvi_profile(trace)
             
             # Get the cluster ID from the trace data
@@ -216,9 +216,9 @@ class InteractiveVisualization:
             legendgroup = f"cluster_{actual_cluster_id}"
             for time_idx in range(min(max_time_layers, n_time_steps)):
                 actual_year = actual_years[time_idx]
-                if time_idx < len(ndvi_profile) and pixels:
-                    geo_coords = [transform_pixel_to_geo(px_y, px_x, data) for px_y, px_x in pixels]
-                    # Batch create traces for better performance - combine multiple pixels into one mesh
+                if time_idx < len(ndvi_profile) and coordinates:
+                    geo_coords = [transform_coordinates_to_geo(px_y, px_x, data) for px_y, px_x in coordinates]
+                    # Batch create 3D visualization cubes for better performance - combine multiple spatial locations into one mesh
                     if geo_coords:
                         all_x_coords = []
                         all_y_coords = []
@@ -229,32 +229,32 @@ class InteractiveVisualization:
                         half_size = trace_size / 2
                         time_half_size = 0.45  # Small temporal extent
                         for vertex_offset, (geo_y, geo_x) in enumerate(geo_coords):
-                            # Define trace vertices (8 corners) for this pixel
+                            # Define cube vertices (8 corners) for this spatial coordinate at time t
                             base_idx = vertex_offset * 8
                             
-                            # Add 8 vertices for this voxel
-                            voxel_x = [geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size,
+                            # Add 8 vertices for this spatial coordinate cube
+                            cube_x = [geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size,
                                      geo_x - half_size, geo_x + half_size, geo_x + half_size, geo_x - half_size]
-                            voxel_y = [geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size,
+                            cube_y = [geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size,
                                      geo_y - half_size, geo_y - half_size, geo_y + half_size, geo_y + half_size]
-                            voxel_z = [actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size,
+                            cube_z = [actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size, actual_year - time_half_size,
                                      actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size, actual_year + time_half_size]
-                            all_x_coords.extend(voxel_x)
-                            all_y_coords.extend(voxel_y)
-                            all_z_coords.extend(voxel_z)
+                            all_x_coords.extend(cube_x)
+                            all_y_coords.extend(cube_y)
+                            all_z_coords.extend(cube_z)
                             
-                            # Define voxel faces using vertex indices (12 triangles for 6 faces)
+                            # Define cube faces using vertex indices (12 triangles for 6 faces)
                             # Bottom face (z-min): vertices 0,1,2,3
                             # Top face (z-max): vertices 4,5,6,7
                             # Side faces connecting bottom to top
-                            voxel_i = [0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1]
-                            voxel_j = [1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6]
-                            voxel_k = [2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5]
+                            cube_i = [0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1]
+                            cube_j = [1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6]
+                            cube_k = [2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5]
                             
-                            # Offset indices for this voxel
-                            all_i_indices.extend([i + base_idx for i in voxel_i])
-                            all_j_indices.extend([j + base_idx for j in voxel_j])
-                            all_k_indices.extend([k + base_idx for k in voxel_k])
+                            # Offset indices for this spatial coordinate cube
+                            all_i_indices.extend([i + base_idx for i in cube_i])
+                            all_j_indices.extend([j + base_idx for j in cube_j])
+                            all_k_indices.extend([k + base_idx for k in cube_k])
                         ndvi_val = ndvi_profile[time_idx]
                         # Only show legend for the first year of each cluster
                         show_legend = (time_idx == 0)
@@ -294,7 +294,7 @@ class InteractiveVisualization:
                 x_range = [x_center - 0.01, x_center + 0.01]
                 y_range = [y_center - 0.01, y_center + 0.01]
         else:
-            # Fallback for pixel coordinates
+            # Fallback for voxel coordinates
             x_range = [0, 100]
             y_range = [0, 100]
         

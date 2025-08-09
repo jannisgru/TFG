@@ -62,17 +62,17 @@ class VegetationSegmenter:
                 logger.error("Failed to load data")
                 return []
             
-            # Step 2: Extract vegetation pixels efficiently
-            logger.info("2. Extracting vegetation pixels...")
-            vegetation_pixels, vegetation_coords = self.extract_vegetation_pixels(data, valid_mask)
+            # Step 2: Extract vegetation traces efficiently
+            logger.info("2. Extracting vegetation traces...")
+            vegetation_traces, vegetation_coords = self.extract_vegetation_traces(data, valid_mask)
 
-            if len(vegetation_pixels) < self.params.min_cluster_size:
-                logger.warning(f"Insufficient vegetation pixels: {len(vegetation_pixels)}")
+            if len(vegetation_traces) < self.params.min_cluster_size:
+                logger.warning(f"Insufficient vegetation traces: {len(vegetation_traces)}")
                 return []
             
             # Step 3: Perform clustering
             logger.info("3. Performing spatially-constrained clustering...")
-            clusters = self.perform_spatially_constrained_clustering(vegetation_pixels, vegetation_coords, global_cluster_counter)
+            clusters = self.perform_spatially_constrained_clustering(vegetation_traces, vegetation_coords, global_cluster_counter)
             
             # Step 4: Create vegetation traces
             logger.info("4. Creating vegetation ST-cubes...")
@@ -125,14 +125,14 @@ class VegetationSegmenter:
             ndvi_data = data['ndvi']
             valid_mask = self.create_valid_mask_chunked(ndvi_data)
             n_valid = int(valid_mask.sum())            
-            #logger.info(f"Valid pixels: {n_valid}/{n_total} ({100*n_valid/n_total:.1f}%)")
+            #logger.info(f"Valid traces: {n_valid}/{n_total} ({100*n_valid/n_total:.1f}%)")
             
             # Extract spatial coordinates
             spatial_coords = self.extract_spatial_coordinates(data)
             
             # Validate sufficient data
             if n_valid < self.params.min_cluster_size:
-                logger.error(f"Insufficient valid pixels: {n_valid}")
+                logger.error(f"Insufficient valid traces: {n_valid}")
                 return None, None, None
             
             return data, valid_mask, spatial_coords
@@ -168,12 +168,12 @@ class VegetationSegmenter:
         
         return coords
 
-    def extract_vegetation_pixels(self, data: xr.Dataset, valid_mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract vegetation pixels based on NDVI thresholds and trend filtering."""
+    def extract_vegetation_traces(self, data: xr.Dataset, valid_mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Extract vegetation traces based on NDVI thresholds and trend filtering."""
         
         ndvi_data = data['ndvi'].values
         
-        # Calculate mean NDVI across time for each pixel
+        # Calculate mean NDVI across time for each trace (spatial location)
         mean_ndvi = np.nanmean(ndvi_data, axis=0)
         
         # Calculate temporal variance for filtering static areas
@@ -191,29 +191,29 @@ class VegetationSegmenter:
             logger.info(f"Applying NDVI trend filter: {self.params.ndvi_trend_filter}")
             trend_mask = self._calculate_trend_mask(ndvi_data, self.params.ndvi_trend_filter)
             vegetation_mask = vegetation_mask & trend_mask
-            logger.info(f"Pixels after trend filtering: {np.sum(vegetation_mask)}")
+            logger.info(f"Traces after trend filtering: {np.sum(vegetation_mask)}")
         
-        # Get coordinates of vegetation pixels
+        # Get coordinates of vegetation traces (spatial locations)
         y_indices, x_indices = np.where(vegetation_mask)
         vegetation_coords = np.column_stack([y_indices, x_indices])
         
-        # Extract NDVI time series for vegetation pixels
-        vegetation_pixels = ndvi_data[:, vegetation_mask.astype(bool)]
+        # Extract NDVI time series for vegetation traces
+        vegetation_traces = ndvi_data[:, vegetation_mask.astype(bool)]
         
-        logger.info(f"Found {len(vegetation_coords)} vegetation pixels")
+        logger.info(f"Found {len(vegetation_coords)} vegetation traces")
         #logger.info(f"Mean NDVI range: {mean_ndvi[vegetation_mask].min():.3f} - {mean_ndvi[vegetation_mask].max():.3f}")
         
-        return vegetation_pixels.T, vegetation_coords  # Transpose for sklearn compatibility
+        return vegetation_traces.T, vegetation_coords  # Transpose for sklearn compatibility
     
-    def perform_spatially_constrained_clustering(self, vegetation_pixels: np.ndarray, vegetation_coords: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
+    def perform_spatially_constrained_clustering(self, vegetation_traces: np.ndarray, vegetation_coords: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
         """Perform spatially-constrained clustering."""
         
-        # n_pixels = len(vegetation_pixels)
-        # logger.info(f"Clustering {n_pixels} vegetation pixels...")
+        # n_traces = len(vegetation_traces)
+        # logger.info(f"Clustering {n_traces} vegetation traces...")
         
         # Standardize temporal features
         scaler = StandardScaler()
-        temporal_features = scaler.fit_transform(vegetation_pixels)
+        temporal_features = scaler.fit_transform(vegetation_traces)
         
         # Normalize spatial coordinates
         spatial_features = vegetation_coords.astype(float)
@@ -241,29 +241,29 @@ class VegetationSegmenter:
         # Remove noise points from further processing
         cluster_labels = cluster_labels[noise_mask]
         vegetation_coords = vegetation_coords[noise_mask]
-        vegetation_pixels = vegetation_pixels[noise_mask]
+        vegetation_traces = vegetation_traces[noise_mask]
         
         logger.info(f"DBSCAN found {len(np.unique(cluster_labels))} clusters, filtered out {np.sum(~noise_mask)} noise points")
         
         # Apply spatial constraints - filter clusters based on spatial distance
         clusters = self.apply_spatial_constraints(
-            cluster_labels, vegetation_coords, vegetation_pixels, global_cluster_counter
+            cluster_labels, vegetation_coords, vegetation_traces, global_cluster_counter
         )
         
         logger.info(f"Created {len(clusters)} spatially-constrained clusters")
         
         return clusters
     
-    def apply_spatial_constraints(self, cluster_labels: np.ndarray, coords: np.ndarray, pixels: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
+    def apply_spatial_constraints(self, cluster_labels: np.ndarray, coords: np.ndarray, traces: np.ndarray, global_cluster_counter: int = 0) -> List[Dict]:
         """Apply spatial distance constraints to clusters."""
                 
         clusters = []
         
         for cluster_id in np.unique(cluster_labels):
-            # Get pixels in this cluster
+            # Get traces in this cluster
             cluster_mask = cluster_labels == cluster_id
             cluster_coords = coords[cluster_mask]
-            cluster_pixels = pixels[cluster_mask]
+            cluster_traces = traces[cluster_mask]
             
             if len(cluster_coords) < self.params.min_cluster_size:
                 continue
@@ -274,33 +274,33 @@ class VegetationSegmenter:
                 distances = cdist(cluster_coords, cluster_coords)
                 mean_distance = np.mean(distances[np.triu_indices_from(distances, k=1)])
                 
-                # Keep only pixels within reasonable distance from cluster centroid
+                # Keep only traces within reasonable distance from cluster centroid
                 centroid = np.mean(cluster_coords, axis=0)
                 distances_to_centroid = np.linalg.norm(cluster_coords - centroid, axis=1)
                 
                 spatial_threshold = min(self.params.max_spatial_distance, mean_distance * 1.5)
-                valid_pixels = distances_to_centroid <= spatial_threshold
+                valid_traces = distances_to_centroid <= spatial_threshold
                 
-                if valid_pixels.sum() >= self.params.min_cluster_size:
+                if valid_traces.sum() >= self.params.min_cluster_size:
                     clusters.append({
                         'id': global_cluster_counter + len(clusters),
-                        'coordinates': cluster_coords[valid_pixels],
-                        'ndvi_profiles': cluster_pixels[valid_pixels],
-                        'size': valid_pixels.sum(),
+                        'coordinates': cluster_coords[valid_traces],
+                        'ndvi_profiles': cluster_traces[valid_traces],
+                        'size': valid_traces.sum(),
                         'centroid': centroid,
-                        'mean_ndvi': np.mean(cluster_pixels[valid_pixels]),
-                        'temporal_variance': np.var(cluster_pixels[valid_pixels])
+                        'mean_ndvi': np.mean(cluster_traces[valid_traces]),
+                        'temporal_variance': np.var(cluster_traces[valid_traces])
                     })
             else:
-                # Single pixel cluster - keep it if it meets minimum size
+                # Single trace cluster - keep it if it meets minimum size
                 clusters.append({
                     'id': global_cluster_counter + len(clusters),
                     'coordinates': cluster_coords,
-                    'ndvi_profiles': cluster_pixels,
+                    'ndvi_profiles': cluster_traces,
                     'size': len(cluster_coords),
                     'centroid': cluster_coords[0] if len(cluster_coords) > 0 else [0, 0],
-                    'mean_ndvi': np.mean(cluster_pixels),
-                    'temporal_variance': np.var(cluster_pixels)
+                    'mean_ndvi': np.mean(cluster_traces),
+                    'temporal_variance': np.var(cluster_traces)
                 })
         
         return clusters
@@ -376,7 +376,7 @@ class VegetationSegmenter:
         return visualizations_created
 
     def _calculate_trend_mask(self, ndvi_data: np.ndarray, trend_filter: str) -> np.ndarray:
-        """Calculate trend mask for filtering pixels by NDVI trend direction."""
+        """Calculate trend mask for filtering traces by NDVI trend direction."""
         
         logger.info(f"Calculating NDVI trends for filtering...")
         
@@ -387,16 +387,16 @@ class VegetationSegmenter:
         
         for i in range(ndvi_data.shape[1]):
             for j in range(ndvi_data.shape[2]):
-                pixel_values = ndvi_data[:, i, j]
+                trace_values = ndvi_data[:, i, j]
                 
-                # Skip pixels with too many NaN values
-                valid_mask = ~np.isnan(pixel_values)
+                # Skip traces with too many NaN values
+                valid_mask = ~np.isnan(trace_values)
                 if np.sum(valid_mask) < ndvi_data.shape[0] * 0.5:  # Need at least 50% valid data
                     continue
                 
                 # Perform linear regression
                 valid_time = time_array[valid_mask]
-                valid_ndvi = pixel_values[valid_mask]
+                valid_ndvi = trace_values[valid_mask]
                 
                 try:
                     slope, _, _, _, _ = linregress(valid_time, valid_ndvi)
@@ -408,11 +408,11 @@ class VegetationSegmenter:
                         trend_mask[i, j] = True
                         
                 except Exception as e:
-                    # Skip pixels where regression fails
+                    # Skip traces where regression fails
                     continue
         
         greening_count = np.sum(trend_mask)
-        total_pixels = ndvi_data.shape[1] * ndvi_data.shape[2]
-        logger.info(f"Trend analysis: {greening_count}/{total_pixels} pixels match '{trend_filter}' trend")
+        total_traces = ndvi_data.shape[1] * ndvi_data.shape[2]
+        logger.info(f"Trend analysis: {greening_count}/{total_traces} traces match '{trend_filter}' trend")
         
         return trend_mask

@@ -33,7 +33,7 @@ class SegmentationConfig:
     
     # Processing parameters (defined in YAML)
     chunk_size: int
-    max_pixels_for_sampling: int
+    max_voxels_for_sampling: int
     
     # Data paths (defined in YAML)
     netcdf_path: str
@@ -95,7 +95,7 @@ class SegmentationConfig:
     min_seasonal_variance: float = 0.01
     
     # Processing
-    max_dataset_pixels: int = 50000
+    max_dataset_voxels: int = 50000
     n_jobs: int = -1
     max_retries: int = 3
     
@@ -103,7 +103,7 @@ class SegmentationConfig:
     csv_encoding: str = "utf-8"
     plotly_js_mode: str = "cdn"
     auto_open: bool = False
-    include_pixel_level_data: bool = True
+    include_voxel_level_data: bool = True
     json_indent: int = 2
 
 
@@ -164,7 +164,7 @@ class ConfigLoader:
         process_params = config_data.get('processing', {})
         flattened.update({
             'chunk_size': process_params['chunk_size'],
-            'max_pixels_for_sampling': process_params['max_pixels_for_sampling'],
+            'max_voxels_for_sampling': process_params['max_voxels_for_sampling'],
         })
         
         # Data paths (required from YAML)

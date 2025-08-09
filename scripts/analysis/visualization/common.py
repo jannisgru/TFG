@@ -122,13 +122,13 @@ class CommonVisualization:
         bounds = [lon_min, lat_min, lon_max, lat_max]
         return bounds
 
-    def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
-        """Safely extract pixels from trace data, handling different formats."""
-        pixels = trace['coordinates']
-        return [tuple(p) for p in pixels]
+    def _get_coordinates_safely(self, trace: Dict) -> List[Tuple[int, int]]:
+        """Safely extract spatial coordinates from trace data, handling different formats."""
+        coordinates = trace['coordinates']
+        return [tuple(p) for p in coordinates]
 
-    def _convert_pixel_to_latlon(self, data: Any, y_coord: int, x_coord: int) -> Tuple[float, float]:
-        """Convert pixel coordinates to latitude/longitude using the same method as other modules."""
+    def _convert_coordinates_to_latlon(self, data: Any, y_coord: int, x_coord: int) -> Tuple[float, float]:
+        """Convert spatial coordinates to latitude/longitude using the same method as other modules."""
         lat = float(data.y.isel(y=y_coord).values)
         lon = float(data.x.isel(x=x_coord).values)
         return lat, lon
@@ -166,8 +166,8 @@ class CommonVisualization:
             traces = results[trend_type]
             
             for trace_idx, trace in enumerate(traces):
-                pixels = self._get_pixels_safely(trace)
-                if not pixels:
+                coordinates = self._get_coordinates_safely(trace)
+                if not coordinates:
                     continue
                     
                 # Get cluster ID from the trace data
@@ -194,10 +194,10 @@ class CommonVisualization:
                     change = ndvi_profile[i] - ndvi_profile[i-1]
                     ndvi_changes.append(change)
                 
-                # Convert pixels to lat/lon
-                for y_coord, x_coord in pixels:
+                # Convert spatial coordinates to lat/lon
+                for y_coord, x_coord in coordinates:
                     try:
-                        lat, lon = self._convert_pixel_to_latlon(data, y_coord, x_coord)
+                        lat, lon = self._convert_coordinates_to_latlon(data, y_coord, x_coord)
                         if lat is None or lon is None:
                             logger.debug(f"Could not convert coordinates ({y_coord}, {x_coord}) to lat/lon")
                             continue
@@ -217,8 +217,8 @@ class CommonVisualization:
                             'year': year,
                             'ndvi_change': change,
                             'ndvi_value': ndvi_profile[year_idx + 1],
-                            'pixel_x': x_coord,
-                            'pixel_y': y_coord
+                            'coord_x': x_coord,
+                            'coord_y': y_coord
                         })
             
         # Create DataFrame
@@ -381,8 +381,8 @@ class CommonVisualization:
             traces = results[trend_type]
             
             for trace in traces:
-                pixels = self._get_pixels_safely(trace)
-                if not pixels:
+                coordinates = self._get_coordinates_safely(trace)
+                if not coordinates:
                     continue
                 
                 cluster_id = trace.get('id', 0) + 1
@@ -390,9 +390,9 @@ class CommonVisualization:
                 # Calculate cluster centroid for label placement
                 lats, lons = [], []
                 
-                # Convert all pixels to lat/lon coordinates and create rectangles
-                for y_coord, x_coord in pixels:
-                    lat, lon = self._convert_pixel_to_latlon(data, y_coord, x_coord)
+                # Convert all spatial coordinates to lat/lon coordinates and create rectangles
+                for y_coord, x_coord in coordinates:
+                    lat, lon = self._convert_coordinates_to_latlon(data, y_coord, x_coord)
                     if lat is not None and lon is not None:
                         lats.append(lat)
                         lons.append(lon)

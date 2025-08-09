@@ -35,27 +35,27 @@ class StaticVisualization:
         config = get_config()
         self.colors = plt.cm.get_cmap(config.color_map)(np.linspace(0, 1, 12))
     
-    def _get_pixels_safely(self, trace: Dict) -> List[Tuple[int, int]]:
-        """Safely extract pixels from trace data, handling different formats."""
-        for field_name in ['pixels', 'coordinates']:
-            pixels = trace.get(field_name, [])
-            if pixels is not None and len(pixels) > 0:
+    def _get_coordinates_safely(self, trace: Dict) -> List[Tuple[int, int]]:
+        """Safely extract spatial coordinates from trace data, handling different formats."""
+        for field_name in ['voxels', 'coordinates']:
+            coordinates = trace.get(field_name, [])
+            if coordinates is not None and len(coordinates) > 0:
                 break
         else:
             return []
         
-        if isinstance(pixels, np.ndarray):
-            if pixels.size == 0:
+        if isinstance(coordinates, np.ndarray):
+            if coordinates.size == 0:
                 return []
             # Convert numpy array to list of tuples
-            if pixels.ndim == 1 and len(pixels) == 2:
-                return [tuple(pixels.tolist())]
-            elif pixels.ndim == 2:
-                return [tuple(row) for row in pixels.tolist()]
+            if coordinates.ndim == 1 and len(coordinates) == 2:
+                return [tuple(coordinates.tolist())]
+            elif coordinates.ndim == 2:
+                return [tuple(row) for row in coordinates.tolist()]
             else:
-                return pixels.tolist()
-        elif isinstance(pixels, list):
-            return pixels
+                return coordinates.tolist()
+        elif isinstance(coordinates, list):
+            return coordinates
         else:
             return []
     
@@ -74,9 +74,9 @@ class StaticVisualization:
         """Check if trace has a valid NDVI profile."""
         return len(self._get_ndvi_profile(trace)) > 0
 
-    def _has_valid_pixels(self, trace: Dict) -> bool:
-        """Check if trace has valid pixel data."""
-        return len(self._get_pixels_safely(trace)) > 0
+    def _has_valid_coordinates(self, trace: Dict) -> bool:
+        """Check if trace has valid coordinate data."""
+        return len(self._get_coordinates_safely(trace)) > 0
 
     def _calculate_summary_statistics(self, traces: List[Dict], municipality_name: str) -> Dict[str, Any]:
         """Calculate summary statistics for the clustering results."""
@@ -88,7 +88,7 @@ class StaticVisualization:
         return {
             'municipality_name': municipality_name,
             'total_clusters': len(traces),
-            'total_area_pixels': total_area,
+            'total_area_voxels': total_area,
             'mean_cluster_size': total_area/len(traces) if traces else 0,
             'overall_mean_ndvi': mean_ndvi,
             'largest_cluster_size': largest_trace.get('area', 0),
@@ -133,7 +133,7 @@ class StaticVisualization:
             ("Segmentation Parameters", ['min_cluster_size', 'max_spatial_distance', 'min_vegetation_ndvi', 'ndvi_variance_threshold']),
             ("Clustering Parameters", ['eps', 'min_pts', 'temporal_weight', 'spatial_weight']),
             ("Data Parameters", ['netcdf_path', 'municipalities_data', 'municipality', 'output_dir']),
-            ("Analysis Parameters", ['chunk_size', 'max_pixels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
+            ("Analysis Parameters", ['chunk_size', 'max_voxels_for_sampling', 'spatial_margin', 'temporal_margin', 'max_neighbors', 'search_margin', 'adjacency_search_neighbors'])
         ]
         
         config_dict = vars(config)
@@ -154,10 +154,10 @@ class StaticVisualization:
                 f.write(f"{trend.upper()} TRENDS:\n")
                 f.write("-" * 20 + "\n")
                 f.write(f"  Total Clusters: {stats['total_clusters']}\n")
-                f.write(f"  Total Area: {stats['total_area_pixels']:,} pixels\n")
-                f.write(f"  Mean Cluster Size: {stats['mean_cluster_size']:.1f} pixels\n")
+                f.write(f"  Total Area: {stats['total_area_voxels']:,} voxels\n")
+                f.write(f"  Mean Cluster Size: {stats['mean_cluster_size']:.1f} voxels\n")
                 f.write(f"  Overall Mean NDVI: {stats['overall_mean_ndvi']:.3f}\n")
-                f.write(f"  Largest Cluster: {stats['largest_cluster_size']:,} pixels\n")
+                f.write(f"  Largest Cluster: {stats['largest_cluster_size']:,} voxels\n")
                 f.write(f"  Highest NDVI: {stats['highest_ndvi_value']:.3f}\n")
                 f.write(f"  Clusters with Valid NDVI: {stats['clusters_with_valid_ndvi']}\n")
                 f.write("\n")
@@ -169,7 +169,7 @@ class StaticVisualization:
                 f.write("TREND COMPARISON:\n")
                 f.write("-" * 17 + "\n")
                 f.write(f"  Ratio (Greening/Browning clusters): {inc_stats.get('total_clusters', 0)}/{dec_stats.get('total_clusters', 0)}\n")
-                f.write(f"  Area Ratio (Greening/Browning): {inc_stats.get('total_area_pixels', 0):,}/{dec_stats.get('total_area_pixels', 0):,} pixels\n")
+                f.write(f"  Area Ratio (Greening/Browning): {inc_stats.get('total_area_voxels', 0):,}/{dec_stats.get('total_area_voxels', 0):,} voxels\n")
                 f.write("\n")
             
             # Configuration Parameters Section
@@ -260,7 +260,7 @@ class StaticVisualization:
                     
                     # Create cluster label
                     cluster_id = trace.get('id', idx) + 1
-                    cluster_size = trace.get('area', trace.get('size', len(self._get_pixels_safely(trace))))
+                    cluster_size = trace.get('area', trace.get('size', len(self._get_coordinates_safely(trace))))
                     label = f"Cluster {cluster_id} (size: {cluster_size})"
                     
                     # Add trace with toggle capability

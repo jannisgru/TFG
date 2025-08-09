@@ -15,10 +15,10 @@ This package segments satellite NDVI time series into spatially and temporally c
 ## How It Works
 
 1. **Data Loading**: Loads NetCDF files containing NDVI time series, with optional municipality filtering
-2. **Vegetation Filtering**: Selects pixels with mean NDVI above threshold and sufficient temporal variance
+2. **Vegetation Filtering**: Selects traces with mean NDVI above threshold and sufficient temporal variance
 3. **Clustering**: 
    - Combines NDVI time series and spatial coordinates, weighted by `temporal_weight` and `spatial_weight`
-   - Uses DBSCAN to cluster pixels into NDVI-similar and spatially close groups
+   - Uses DBSCAN to cluster traces into NDVI-similar and spatially close groups
    - Number of clusters determined automatically by DBSCAN parameters (`eps` and `min_pts`)
 4. **Spatial Constraints**: Ensures clusters remain spatially coherent within `max_spatial_distance`
 5. **Export & Visualization**: Results exported as JSON with static (Matplotlib) and interactive (Plotly) visualizations
@@ -27,9 +27,9 @@ This package segments satellite NDVI time series into spatially and temporally c
 
 The core segmentation uses DBSCAN clustering on combined NDVI and spatial features:
 
-1. **Feature Construction**: Each pixel gets a feature vector combining NDVI time series and spatial coordinates (x, y)
+1. **Feature Construction**: Each trace gets a feature vector combining NDVI time series and spatial coordinates (x, y)
 2. **DBSCAN Clustering**: 
-   - Density-based clustering that groups pixels based on feature similarity and density
+   - Density-based clustering that groups traces based on feature similarity and density
    - Automatically determines the number of clusters based on data density
    - Can identify and filter out noise points (outliers)
    - Controlled by `eps` (maximum distance between neighbors) and `min_pts` (minimum points to form cluster)
@@ -44,10 +44,10 @@ Configure in `segment_config.yaml`:
 ### Segmentation Parameters
 | Parameter | Description |
 |-----------|-------------|
-| `min_cluster_size` | Minimum pixels for valid cluster |
-| `max_spatial_distance` | Maximum pixel distance for spatial clustering |
+| `min_cluster_size` | Minimum traces for valid cluster |
+| `max_spatial_distance` | Maximum trace distance for spatial clustering |
 | `min_vegetation_ndvi` | Minimum NDVI threshold for vegetation |
-| `ndvi_variance_threshold` | Minimum NDVI variance to include pixel |
+| `ndvi_variance_threshold` | Minimum NDVI variance to include trace |
 
 ### Clustering Parameters
 | Parameter | Description |
@@ -86,8 +86,8 @@ analysis/
 **Segmentation Parameters:**
 - **`max_spatial_distance`**: Higher values allow more spatial spread in post-processing
 - **`min_cluster_size`**: Prevents tiny/noisy clusters through post-processing  
-- **`min_vegetation_ndvi`**: Threshold for initial vegetation pixel selection
-- **`ndvi_variance_threshold`**: Filters static vegetation pixels
+- **`min_vegetation_ndvi`**: Threshold for initial vegetation trace selection
+- **`ndvi_variance_threshold`**: Filters static vegetation traces
 
 **Clustering Parameters:**
 - **`eps`**: Controls cluster density - smaller values create tighter, more clusters
