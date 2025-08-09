@@ -19,7 +19,7 @@ segmentation:
 # ==============================================================================
 clustering:
   # DBSCAN clustering parameters
-  eps: 0.15                            # Epsilon: maximum distance between samples to be neighbors
+  eps: 0.135                            # Epsilon: maximum distance between samples to be neighbors
   min_pts: 8                       # min_pts: minimum traces in neighborhood to form cluster
   temporal_weight: 0.05                  # Weight for temporal vs spatial features (0-1, 0=spatial only)
   spatial_weight: 0.3                  # Weight for spatial coordinates in feature space (0-1)

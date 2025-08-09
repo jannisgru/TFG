@@ -6,7 +6,9 @@ on vegetation analysis using NDVI clustering with local spatial constraints.
 
 Package Structure:
 - visualization/: Static and interactive visualization modules
-- Main modules: segmentation_main, config_loader, json_exporter
+- segmentation_main: Main orchestrator and entry point functions
+- segmentation_engine: Core computational logic and algorithms
+- Other modules: config_loader, json_exporter
 
 Main Function:
 - segment_vegetation: Run vegetation-focused NDVI clustering segmentation
@@ -19,6 +21,7 @@ Features:
 """
 from .visualization import StaticVisualization, InteractiveVisualization, CommonVisualization
 from .segmentation_main import segment_vegetation, VegetationSegmentationParameters
+from .segmentation_engine import VegetationSegmenter
 from .config_loader import get_config, get_parameter, reload_config
 from .json_exporter import VegetationClusterJSONExporter
 
@@ -28,6 +31,7 @@ __all__ = [
     
     # Core classes
     'VegetationSegmentationParameters',
+    'VegetationSegmenter',
     
     # Export functionality
     'VegetationClusterJSONExporter',
