@@ -34,6 +34,7 @@ class SegmentationConfig:
     # Processing parameters (defined in YAML)
     chunk_size: int
     max_voxels_for_sampling: int
+    use_float32: bool
     
     # Data paths (defined in YAML)
     netcdf_path: str
@@ -47,6 +48,10 @@ class SegmentationConfig:
 
     # Export settings (defined in YAML)
     enable_json_export: bool
+
+    # Visualization settings (defined in YAML)
+    enable_3d_visualization: bool
+    enable_static_visualization: bool
 
     # Basemap settings (defined in YAML)
     basemap_layer: str
@@ -165,6 +170,7 @@ class ConfigLoader:
         flattened.update({
             'chunk_size': process_params['chunk_size'],
             'max_voxels_for_sampling': process_params['max_voxels_for_sampling'],
+            'use_float32': process_params.get('use_float32', True),
         })
         
         # Data paths (required from YAML)
@@ -179,6 +185,13 @@ class ConfigLoader:
         export_params = config_data.get('export', {})
         flattened.update({
             'enable_json_export': export_params['enable_json_export'],
+        })
+        
+        # Visualization settings (required from YAML)
+        viz_params = config_data.get('visualization', {})
+        flattened.update({
+            'enable_3d_visualization': viz_params.get('enable_3d_visualization', True),
+            'enable_static_visualization': viz_params.get('enable_static_visualization', True),
         })
         
         # Basemap settings (required from YAML)

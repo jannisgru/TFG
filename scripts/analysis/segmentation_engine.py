@@ -215,14 +215,14 @@ class VegetationSegmenter:
         scaler = StandardScaler()
         temporal_features = scaler.fit_transform(vegetation_traces)
         
-        # Normalize spatial coordinates
-        spatial_features = vegetation_coords.astype(float)
+        # Normalize spatial coordinates and convert to float32
+        spatial_features = vegetation_coords.astype(np.float32)
         spatial_features = (spatial_features - spatial_features.mean(axis=0)) / spatial_features.std(axis=0)
         
         # Combine temporal and spatial features with weighting
         combined_features = np.column_stack([
-            temporal_features * self.params.temporal_weight,
-            spatial_features * self.params.spatial_weight
+            (temporal_features * self.params.temporal_weight).astype(np.float32),
+            (spatial_features * self.params.spatial_weight).astype(np.float32)
         ])
         
         # Perform DBSCAN clustering
@@ -270,14 +270,28 @@ class VegetationSegmenter:
             
             # Apply spatial constraints to maintain cluster coherence
             if len(cluster_coords) > 1:
-                # Calculate pairwise distances
-                distances = cdist(cluster_coords, cluster_coords)
-                mean_distance = np.mean(distances[np.triu_indices_from(distances, k=1)])
-                
-                # Keep only traces within reasonable distance from cluster centroid
+                # Memory-efficient distance calculation for large clusters
                 centroid = np.mean(cluster_coords, axis=0)
                 distances_to_centroid = np.linalg.norm(cluster_coords - centroid, axis=1)
                 
+                # For very large clusters, use sampling to estimate mean distance instead of full pairwise
+                if len(cluster_coords) > 1000:
+                    # Sample subset for mean distance calculation to avoid memory issues
+                    sample_size = min(1000, len(cluster_coords))
+                    sample_indices = np.random.choice(len(cluster_coords), sample_size, replace=False)
+                    sample_coords = cluster_coords[sample_indices]
+                    
+                    # Calculate pairwise distances on sample using float32 for memory efficiency
+                    sample_distances = cdist(sample_coords, sample_coords, metric='euclidean').astype(np.float32)
+                    mean_distance = np.mean(sample_distances[np.triu_indices_from(sample_distances, k=1)])
+                    
+                    logger.info(f"Large cluster ({len(cluster_coords)} points) - using sampling for distance estimation")
+                else:
+                    # Calculate pairwise distances using float32 for memory efficiency
+                    distances = cdist(cluster_coords, cluster_coords, metric='euclidean').astype(np.float32)
+                    mean_distance = np.mean(distances[np.triu_indices_from(distances, k=1)])
+                
+                # Apply spatial threshold with adaptive sizing
                 spatial_threshold = min(self.params.max_spatial_distance, mean_distance * 1.5)
                 valid_traces = distances_to_centroid <= spatial_threshold
                 
@@ -353,25 +367,32 @@ class VegetationSegmenter:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)    
         visualizations_created = {}
-            
-        # 1. Interactive HTML visualizations
-        interactive_viz = InteractiveVisualization(output_directory=str(output_path))
-        interactive_files = interactive_viz.create_all_visualizations(
-            traces=vegetation_traces,
-            data=data,
-            municipality_name=municipality_name
-        )
-        visualizations_created.update(interactive_files)
+        
+        # 1. Interactive HTML visualizations (if enabled)
+        if self.config.enable_3d_visualization:
+            logger.info("Generating 3D Interactive Visualizations...")
+            interactive_viz = InteractiveVisualization(output_directory=str(output_path))
+            interactive_files = interactive_viz.create_all_visualizations(
+                traces=vegetation_traces,
+                data=data,
+                municipality_name=municipality_name
+            )
+            visualizations_created.update(interactive_files)
+        else:
+            logger.info("3D Interactive visualizations disabled in configuration")
 
-        # 2. Static publication-ready visualizations
-        logger.info("Generating 2D Visualizations...")
-        static_viz = StaticVisualization(output_directory=str(output_path))
-        static_files = static_viz.create_all_static_visualizations(
-            traces=vegetation_traces,
-            data=data,
-            municipality_name=municipality_name
-        )
-        visualizations_created.update(static_files)
+        # 2. Static publication-ready visualizations (if enabled)
+        if self.config.enable_static_visualization:
+            logger.info("Generating 2D Static Visualizations...")
+            static_viz = StaticVisualization(output_directory=str(output_path))
+            static_files = static_viz.create_all_static_visualizations(
+                traces=vegetation_traces,
+                data=data,
+                municipality_name=municipality_name
+            )
+            visualizations_created.update(static_files)
+        else:
+            logger.info("Static 2D visualizations disabled in configuration")
                         
         return visualizations_created
 

@@ -57,6 +57,12 @@ Configure in `segment_config.yaml`:
 | `temporal_weight` | Weight for temporal vs spatial features (0-1) |
 | `spatial_weight` | Weight for spatial coordinates in feature space |
 
+### Visualization Parameters
+| Parameter | Description |
+|-----------|-------------|
+| `enable_3d_visualization` | Enable/disable 3D interactive visualization creation |
+| `enable_static_visualization` | Enable/disable static 2D visualization creation |
+
 
 ## File Structure
 

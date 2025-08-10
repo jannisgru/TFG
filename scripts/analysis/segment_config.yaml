@@ -9,18 +9,18 @@
 segmentation:
   # Core algorithm parameters
   min_cluster_size: 5                    # Minimum traces per vegetation cluster
-  max_spatial_distance: 10               # Maximum trace distance for spatial clustering (traces)
-  min_vegetation_ndvi: 0.2             # Minimum NDVI threshold to consider traces as vegetation (0-1)
-  ndvi_variance_threshold: 0.003        # Minimum NDVI temporal variance to include traces (0-1)
-  ndvi_trend_filter:              # Filter for NDVI trends ('greening', 'browning', or null for both separately)
+  max_spatial_distance: 1000              # Maximum trace distance for spatial clustering (traces)
+  min_vegetation_ndvi: 0.2                 # Minimum NDVI threshold to consider traces as vegetation (0-1)
+  ndvi_variance_threshold: 0.001          # Minimum NDVI temporal variance to include traces (0-1)
+  ndvi_trend_filter:                       # Filter for NDVI trends ('greening', 'browning', or null for both separately)
 
 # ==============================================================================
 # CLUSTERING ALGORITHM PARAMETERS
 # ==============================================================================
 clustering:
   # DBSCAN clustering parameters
-  eps: 0.135                            # Epsilon: maximum distance between samples to be neighbors
-  min_pts: 20                       # min_pts: minimum traces in neighborhood to form cluster
+  eps: 0.15                   # Epsilon: maximum distance between samples to be neighbors
+  min_pts: 5                       # min_pts: minimum traces in neighborhood to form cluster
   temporal_weight: 0.05                  # Weight for temporal vs spatial features (0-1, 0=spatial only)
   spatial_weight: 0.3                  # Weight for spatial coordinates in feature space (0-1)
 
@@ -29,16 +29,24 @@ clustering:
 # ==============================================================================
 data:
   # File paths
-  netcdf_path: "data/processed/mdim_Sant_Marti.nc"    # Input NetCDF file
-  municipality: "Sant Martí"                               # Municipality to analyze
-  output_dir: "outputs/Sant_Marti"              # Output directory
+  netcdf_path: "data/processed/mdim_Begues.nc"    # Input NetCDF file
+  municipality: "Begues"                               # Municipality to analyze
+  output_dir: "outputs/Begues"              # Output directory
 
 # ==============================================================================
 # EXPORT SETTINGS
 # ==============================================================================
 export:
   # Export options for cluster data
-  enable_json_export: true             # Enable JSON export of cluster data
+  enable_json_export: false             # Enable JSON export of cluster data
+
+# ==============================================================================
+# VISUALIZATION SETTINGS
+# ==============================================================================
+visualization:
+  # Visualization options
+  enable_3d_visualization: false        # Enable 3D interactive visualization creation
+  enable_static_visualization: true    # Enable static 2D visualization creation
 
 # ============================================================================== 
 # BASEMAP SETTINGS
@@ -56,6 +64,7 @@ processing:
   # Performance parameters that may need adjustment for different datasets
   chunk_size: 1000                     # Processing chunk size for large datasets
   max_voxels_for_sampling: 50000       # Maximum voxels before sampling for efficiency
+  use_float32: true                    # Use float32 instead of float64 for memory efficiency
 
 # Note: Additional configuration parameters (visualization, logging, export, etc.) 
 # are available with defaults in config_loader.py and rarely need modification.

@@ -17,6 +17,7 @@ from .config_loader import get_config
 from .json_exporter import VegetationClusterJSONExporter
 from .visualization.visualization_2d import StaticVisualization
 from .segmentation_engine import VegetationSegmenter
+from .visualization.common import CommonVisualization
 
 warnings.filterwarnings('ignore')
 
@@ -180,26 +181,20 @@ def segment_vegetation(netcdf_path: str = None,
     
     # Create additional visualizations and reports
     if len(trends_to_process) > 1:
-        static_viz = StaticVisualization(output_directory=timestamped_output_dir)
-        static_viz.create_combined_analysis_report(results, municipality_name)
-
-        # Create common visualizations using CommonVisualization class
-        from .visualization.common import CommonVisualization
         common_viz = CommonVisualization(output_directory=timestamped_output_dir)
+        static_viz = StaticVisualization(output_directory=timestamped_output_dir)
         
-        # Create spatial distribution map with cluster numbering
-        common_viz.create_spatial_distribution_map(
-            results=results,
-            data=data,
-            municipality_name=municipality_name
-        )
-        
-        # Create interactive temporal trend map
-        common_viz.create_interactive_temporal_trend_map(
-            results=results,
-            data=data,
-            municipality_name=municipality_name
-        )
+        # Create static visualizations
+        if config.enable_static_visualization:
+            static_viz.create_combined_analysis_report(results, municipality_name)
+            common_viz.create_spatial_distribution_map(results=results, data=data, municipality_name=municipality_name)
+
+        # Create interactive visualizations only if enabled
+        if config.enable_3d_visualization:
+            common_viz.create_3d_visualizations(results=results, data=data, municipality_name=municipality_name)
+            common_viz.create_interactive_temporal_trend_map(results=results, data=data, municipality_name=municipality_name)
+        else:
+            logger.info("Interactive trend visualizations disabled in configuration")
     
     return results
 
