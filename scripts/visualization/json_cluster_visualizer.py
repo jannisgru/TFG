@@ -4,8 +4,8 @@ Combines cluster visualization from JSON files with ICGC orthophoto basemap.
 """
 
 # ==== CONFIGURABLE PARAMETERS ====
-JSON_PATH = "outputs/Sant_Marti/20250809_162922/vegetation_clusters_combined_Sant_Martí.json"
-CLUSTER_IDS = [5, 8, 9, 109, 110, 118]  # List of cluster IDs to visualize (can be single ID or multiple)
+JSON_PATH = "outputs/Sant_Feliu_de_Llobregat/20250812_153432/vegetation_clusters_combined_Sant_Feliu_de_Llobregat.json"
+CLUSTER_IDS = [1, 6, 39, 46]  # List of cluster IDs to visualize (can be single ID or multiple)
 # =================================
 
 import json
@@ -176,12 +176,12 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
         
         for lon, lat in zip(lons, lats):
             base_size = 0.0045
-            rect_width = base_size * lon_range * 1.3
-            rect_height = base_size * lat_range * 1.3
+            rect_width = base_size * lon_range * 1.1
+            rect_height = base_size * lat_range * 1.25
             
             rect = Rectangle((lon - rect_width/2, lat - rect_height/2), 
                            rect_width, rect_height,
-                           facecolor=color, alpha=0.8, zorder=10)
+                           facecolor=color, alpha=0.8)
             ax.add_patch(rect)
         
         # Add legend entry
@@ -286,6 +286,7 @@ def create_temporal_plot(clusters_data, data, output_dir):
     ax.legend(loc='best')
     ax.set_xticks(np.arange(min(years)+1, max(years)+1, 5))
     ax.set_xticklabels(np.arange(min(years)+1, max(years)+1, 5))
+    ax.set_xlim(min(years), max(years))
 
     # Add statistics
     stats_text = f'Total Clusters: {len(clusters_data)}\n' + '\n'.join(all_stats)
