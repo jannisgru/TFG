@@ -18,6 +18,8 @@ from pathlib import Path
 from loguru import logger
 import warnings
 from io import BytesIO
+import math
+from matplotlib.patches import Rectangle
 
 warnings.filterwarnings('ignore')
 
@@ -98,14 +100,20 @@ def get_cluster_coordinates(cluster):
     return lats, lons
 
 
-def get_wms_image(wms_url, bbox, layer, width=3024, height=3024):
-    """Fetch WMS image from ICGC service using exact wms_viewer.py logic."""
+def get_wms_image(wms_url, bbox, layer):
+    """Fetch WMS image from ICGC service with consistent resolution based on bbox."""
     logger.info("Fetching WMS image...")
     
-    # Use the EXACT bbox format from wms_viewer.py
+    # Calculate pixel size based on bounds for consistent resolution
+    avg_lat = (bbox[1] + bbox[3]) / 2
+    cos_lat = math.cos(math.radians(avg_lat))
+    width_m = abs(bbox[2] - bbox[0]) * 111320 * cos_lat
+    height_m = abs(bbox[3] - bbox[1]) * 110574
+    width_px = max(1, int(round(width_m / 3)))
+    height_px = max(1, int(round(height_m / 3)))
+    
     bbox_str = f"{bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]}"
     
-    # Build URL exactly like wms_viewer.py
     icgc_wms_url = (
         f"{wms_url}?"
         "REQUEST=GetMap&"
@@ -113,7 +121,7 @@ def get_wms_image(wms_url, bbox, layer, width=3024, height=3024):
         "SERVICE=WMS&"
         "CRS=EPSG:4326&"
         f"BBOX={bbox_str}&"
-        f"WIDTH={width}&HEIGHT={height}&"
+        f"WIDTH={width_px}&HEIGHT={height_px}&"
         f"LAYERS={layer}&"
         "STYLES=&"
         "FORMAT=JPEG&"
@@ -121,6 +129,7 @@ def get_wms_image(wms_url, bbox, layer, width=3024, height=3024):
     )
     
     logger.info(f"WMS request: {icgc_wms_url}")
+    logger.info(f"Calculated dimensions: {width_px}x{height_px} pixels")
     
     response = requests.get(icgc_wms_url, timeout=30)
     response.raise_for_status()
@@ -150,7 +159,7 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
     ax.imshow(np.array(wms_image), extent=[municipality_bbox[0], municipality_bbox[2], municipality_bbox[1], municipality_bbox[3]], 
               origin='upper', alpha=0.9)
     
-    # Add municipality boundaries (like wms_viewer.py does)
+    # Add municipality boundaries
     municipality_gdf.plot(ax=ax, facecolor='none', edgecolor='white', linewidth=1, alpha=0.0)
     
     # Define trend-based colors
@@ -169,15 +178,27 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
     lon_range = municipality_bbox[2] - municipality_bbox[0]
     lat_range = municipality_bbox[3] - municipality_bbox[1]
     
-    from matplotlib.patches import Rectangle
     for cluster_id, cluster, trend in clusters_data:
         lats, lons = get_cluster_coordinates(cluster)
         color = get_trend_color(trend, cluster_id)
         
         for lon, lat in zip(lons, lats):
-            base_size = 0.0045
-            rect_width = base_size * lon_range * 1.1
-            rect_height = base_size * lat_range * 1.25
+            # Calculate dynamic pixel size based on WMS image resolution
+            # Get WMS image dimensions to calculate pixel density
+            avg_lat = (municipality_bbox[1] + municipality_bbox[3]) / 2
+            cos_lat = math.cos(math.radians(avg_lat))
+            width_m = abs(municipality_bbox[2] - municipality_bbox[0]) * 111320 * cos_lat
+            height_m = abs(municipality_bbox[3] - municipality_bbox[1]) * 110574
+            width_px = max(1, int(round(width_m / 3)))
+            height_px = max(1, int(round(height_m / 3)))
+            
+            # Calculate pixel size in geographic coordinates
+            pixel_size_lon = lon_range / width_px
+            pixel_size_lat = lat_range / height_px
+            
+            # Make rectangles represent approximately 30x30m pixels (10 pixels)
+            rect_width = pixel_size_lon * 10 * 0.75
+            rect_height = pixel_size_lat * 13  * 0.8 # Always taller
             
             rect = Rectangle((lon - rect_width/2, lat - rect_height/2), 
                            rect_width, rect_height,
