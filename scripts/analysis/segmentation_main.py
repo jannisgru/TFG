@@ -191,7 +191,6 @@ def segment_vegetation(netcdf_path: str = None,
 
         # Create interactive visualizations only if enabled
         if config.enable_3d_visualization:
-            common_viz.create_3d_visualizations(results=results, data=data, municipality_name=municipality_name)
             common_viz.create_interactive_temporal_trend_map(results=results, data=data, municipality_name=municipality_name)
         else:
             logger.info("Interactive trend visualizations disabled in configuration")

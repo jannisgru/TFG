@@ -4,8 +4,8 @@ Combines cluster visualization from JSON files with ICGC orthophoto basemap.
 """
 
 # ==== CONFIGURABLE PARAMETERS ====
-JSON_PATH = "outputs/Sant_Feliu_de_Llobregat/20250812_153432/vegetation_clusters_combined_Sant_Feliu_de_Llobregat.json"
-CLUSTER_IDS = [1, 6, 39, 46]  # List of cluster IDs to visualize (can be single ID or multiple)
+JSON_PATH = "outputs/Sant_Adria_del_Besos/20250812_185543/vegetation_clusters_combined_Sant_Adria_del_Besos.json"
+CLUSTER_IDS = [1, 2, 3, 5, 6, 7, 8, 9]  # List of cluster IDs to visualize (can be single ID or multiple)
 # =================================
 
 import json
@@ -20,11 +20,11 @@ import warnings
 from io import BytesIO
 import math
 from matplotlib.patches import Rectangle
+import unicodedata
 
 warnings.filterwarnings('ignore')
 
 # Fixed parameters (no need to configure)
-WMS_URL = "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms"
 BASEMAP_LAYER = "ortofoto_color_vigent"
 BOUNDARIES_PATH = "data/boundaries/AMB_Municipalities.shp"
 
@@ -35,6 +35,14 @@ logger.add(
     level="INFO",
     format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
 )
+
+
+def normalize_text(text):
+    """Remove accents and normalize text for comparison."""
+    # Normalize unicode characters and remove accents
+    normalized = unicodedata.normalize('NFD', text)
+    ascii_text = normalized.encode('ascii', 'ignore').decode('ascii')
+    return ascii_text.lower().strip()
 
 
 def load_municipality_boundaries(boundaries_path, municipality_name):
@@ -55,10 +63,47 @@ def load_municipality_boundaries(boundaries_path, municipality_name):
     if municipality_column is None:
         municipality_column = gdf.columns[0]
     
-    # Filter for specific municipality
-    gdf_filtered = gdf[gdf[municipality_column].str.contains(municipality_name, case=False, na=False)]
+    logger.info(f"Using column '{municipality_column}' for municipality names")
+    logger.info(f"Looking for municipality: '{municipality_name}'")
+    
+    # Normalize the search term
+    normalized_search = normalize_text(municipality_name)
+    
+    # Filter for specific municipality using accent-insensitive matching
+    mask = gdf[municipality_column].apply(lambda x: normalize_text(str(x)) == normalized_search)
+    gdf_filtered = gdf[mask]
+    
+    if gdf_filtered.empty:
+        # Try partial matching if exact match fails
+        mask = gdf[municipality_column].apply(lambda x: normalized_search in normalize_text(str(x)))
+        gdf_filtered = gdf[mask]
+        
+        if not gdf_filtered.empty:
+            logger.info(f"Found municipality using partial matching")
+        else:
+            alt_names = [
+                municipality_name.replace('_', ' '),
+                municipality_name.replace(' ', '_'),
+                municipality_name.replace("'", "'"),
+                municipality_name.replace("'", "'")
+            ]
+            
+            for alt_name in alt_names:
+                normalized_alt = normalize_text(alt_name)
+                mask = gdf[municipality_column].apply(lambda x: normalize_text(str(x)) == normalized_alt)
+                gdf_filtered = gdf[mask]
+                if not gdf_filtered.empty:
+                    logger.info(f"Found municipality using alternative name: '{alt_name}'")
+                    break
+            
+            if gdf_filtered.empty:
+                available_names = gdf[municipality_column].tolist()
+                logger.error(f"Municipality '{municipality_name}' not found in shapefile")
+                logger.error(f"Available municipalities: {available_names[:10]}...")
+                raise ValueError(f"Municipality '{municipality_name}' not found in shapefile")
     
     bbox = gdf_filtered.total_bounds  # [minx, miny, maxx, maxy]
+    logger.info(f"Municipality bbox: {bbox}")
     return gdf_filtered, bbox
 
 
@@ -100,7 +145,7 @@ def get_cluster_coordinates(cluster):
     return lats, lons
 
 
-def get_wms_image(wms_url, bbox, layer):
+def get_wms_image(bbox, layer):
     """Fetch WMS image from ICGC service with consistent resolution based on bbox."""
     logger.info("Fetching WMS image...")
     
@@ -115,7 +160,7 @@ def get_wms_image(wms_url, bbox, layer):
     bbox_str = f"{bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]}"
     
     icgc_wms_url = (
-        f"{wms_url}?"
+        "https://geoserveis.icgc.cat/servei/catalunya/orto-territorial/wms?"
         "REQUEST=GetMap&"
         "VERSION=1.3.0&"
         "SERVICE=WMS&"
@@ -124,8 +169,7 @@ def get_wms_image(wms_url, bbox, layer):
         f"WIDTH={width_px}&HEIGHT={height_px}&"
         f"LAYERS={layer}&"
         "STYLES=&"
-        "FORMAT=JPEG&"
-        "TRANSPARENT=FALSE"
+        "FORMAT=JPEG"
     )
     
     logger.info(f"WMS request: {icgc_wms_url}")
@@ -150,7 +194,7 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
     municipality = data['metadata']['municipality']
     
     # Get WMS basemap for the entire municipality
-    wms_image = get_wms_image(WMS_URL, municipality_bbox, BASEMAP_LAYER)
+    wms_image = get_wms_image(municipality_bbox, BASEMAP_LAYER)
     
     # Create figure
     fig, ax = plt.subplots(figsize=(12, 10))
@@ -165,7 +209,7 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
     # Define trend-based colors
     def get_trend_color(trend, cluster_id):
         if 'greening' in trend.lower():
-            green_colors = ['forestgreen', 'limegreen', 'darkgreen', 'seagreen', 'mediumseagreen']
+            green_colors = ['forestgreen', 'limegreen', 'darkgreen', 'seagreen', 'mediumseagreen', 'lightgreen', 'palegreen', 'yellowgreen']
             return green_colors[cluster_id % len(green_colors)]
         elif 'browning' in trend.lower():
             red_colors = ['darkred', 'red', 'crimson', 'firebrick', 'brown']
@@ -206,18 +250,21 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
             ax.add_patch(rect)
         
         # Add legend entry
-        ax.scatter([], [], c=color, s=10, alpha=0.8, marker='s',
+        ax.scatter([], [], c=color, s=80, alpha=0.8, marker='s',
                    label=f'Cluster {cluster_id} ({len(lats)} traces)')
     
     # Set extent and labels
     ax.set_xlim(municipality_bbox[0], municipality_bbox[2])
     ax.set_ylim(municipality_bbox[1], municipality_bbox[3])
-    ax.set_xlabel('Longitude', fontsize=12)
-    ax.set_ylabel('Latitude', fontsize=12)
-    ax.set_title(f'{municipality} - {len(clusters_data)} Clusters\nICGC Orthophoto', 
-                fontsize=14, fontweight='bold')
+    ax.set_xlabel('Longitude', fontsize=20)
+    ax.set_ylabel('Latitude', fontsize=20)
+    #ax.set_title(f'{municipality} - {len(clusters_data)} Clusters\nICGC Orthophoto', fontsize=30, fontweight='bold')
     
-    ax.legend(loc='upper right')
+    # Increase tick font size
+    ax.tick_params(axis='both', which='major', labelsize=14)
+    
+    # Place legend outside the plot area with bigger font
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14)
     ax.grid(True, alpha=0.3)
     
     # Save plot
@@ -244,23 +291,21 @@ def create_temporal_plot(clusters_data, data, output_dir):
     # Define trend-based colors for temporal plot
     def get_trend_color_temporal(trend, cluster_id):
         if 'greening' in trend.lower():
-            # Different shades of green for greening clusters
             green_colors = ['forestgreen', 'limegreen', 'darkgreen', 'seagreen', 'mediumseagreen']
             return green_colors[cluster_id % len(green_colors)]
         elif 'browning' in trend.lower():
-            # Different shades of red/brown for browning clusters
             red_colors = ['darkred', 'red', 'crimson', 'firebrick', 'brown']
             return red_colors[cluster_id % len(red_colors)]
         else:
-            # Fallback colors for other trends
             other_colors = ['blue', 'orange', 'purple', 'pink', 'gray']
             return other_colors[cluster_id % len(other_colors)]
     
     # Create figure
     fig, ax = plt.subplots(figsize=(14, 8))
     
-    # Plot each cluster
+    # Plot each cluster and store final positions for labels
     all_stats = []
+    cluster_final_positions = []  # Store (x, y, label, color) for end labels
     for cluster_id, cluster, trend in clusters_data:
         temporal_profile = cluster['temporal_profile']
         mean_ndvi_dict = temporal_profile['mean_ndvi_per_year']
@@ -281,9 +326,14 @@ def create_temporal_plot(clusters_data, data, output_dir):
         
         # Plot mean NDVI line
         ax.plot(years_array, mean_ndvi_array, 
-               color=color, linewidth=2, marker='o', markersize=4,
-               label=f'Cluster {cluster_id} ({trend})')
+               color=color, linewidth=2, marker='o', markersize=4)
         
+        # Store final position for end label
+        if len(years_array) > 0 and len(mean_ndvi_array) > 0:
+            final_x = years_array[-1]
+            final_y = mean_ndvi_array[-1]
+            cluster_final_positions.append((final_x, final_y, f'C{cluster_id}', color))
+
         # Add standard deviation
         if np.any(std_ndvi_array > 0):
             ax.fill_between(years_array, 
@@ -297,25 +347,56 @@ def create_temporal_plot(clusters_data, data, output_dir):
         all_stats.append(f'C{cluster_id}: {n_traces} traces, std: {overall_std:.3f}')
     
     # Customize plot
-    ax.set_xlabel('Year', fontsize=12)
-    ax.set_ylabel('NDVI Value', fontsize=12)
-    ax.set_title(f'{municipality} - {len(clusters_data)} Clusters NDVI Evolution', 
-                fontsize=14, fontweight='bold')
-    
+    ax.set_xlabel('Year', fontsize=20)
+    ax.set_ylabel('NDVI', fontsize=20)
+    # ax.set_title(f'{municipality} - {len(clusters_data)} Clusters NDVI Evolution', fontsize=30, fontweight='bold')
+
     ax.set_ylim(0, 1)
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='best')
+    
+    # Increase tick font size
+    ax.tick_params(axis='both', which='major', labelsize=14)
+    
     ax.set_xticks(np.arange(min(years)+1, max(years)+1, 5))
     ax.set_xticklabels(np.arange(min(years)+1, max(years)+1, 5))
     ax.set_xlim(min(years), max(years))
-
-    # Add statistics
-    stats_text = f'Total Clusters: {len(clusters_data)}\n' + '\n'.join(all_stats)
     
-    ax.text(0.02, 0.98, stats_text, 
-           transform=ax.transAxes, 
-           bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
-           verticalalignment='top', fontsize=10)
+    # Create secondary y-axis for cluster labels
+    ax2 = ax.twinx()
+    ax2.set_ylabel('Clusters', fontsize=20, labelpad=40)
+    ax2.set_ylim(0, 1)
+    ax2.tick_params(axis='y', labelsize=0, length=0)
+    
+    # Sort cluster positions by y-coordinate for overlap prevention
+    cluster_final_positions.sort(key=lambda x: x[1]) 
+    min_spacing = 0.03
+    adjusted_positions = []
+    
+    for i, (final_x, final_y, label, color) in enumerate(cluster_final_positions):
+        adjusted_y = final_y
+        
+        # Check for overlaps with previously placed labels
+        for prev_y in adjusted_positions:
+            if abs(adjusted_y - prev_y) < min_spacing:
+                if adjusted_y < prev_y:
+                    adjusted_y = prev_y - min_spacing
+                else:
+                    adjusted_y = prev_y + min_spacing        
+        adjusted_y = max(0.02, min(0.90, adjusted_y))
+        adjusted_positions.append(adjusted_y)
+        
+        # Use the secondary axis for positioning cluster labels
+        ax2.text(max(years) + 0.5, adjusted_y, label, 
+               color=color, fontsize=14,
+               verticalalignment='center', horizontalalignment='left',
+               transform=ax2.transData)
+
+    # stats_text = f'Total Clusters: {len(clusters_data)}\n' + '\n'.join(all_stats)
+    # 
+    # ax.text(0.02, 0.98, stats_text, 
+    #        transform=ax.transAxes, 
+    #        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+    #        verticalalignment='top', fontsize=10)
     
     # Save plot
     output_path = Path(output_dir)
