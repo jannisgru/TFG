@@ -4,8 +4,11 @@ Combines cluster visualization from JSON files with ICGC orthophoto basemap.
 """
 
 # ==== CONFIGURABLE PARAMETERS ====
-JSON_PATH = "outputs/Sant_Adria_del_Besos/20250812_185543/vegetation_clusters_combined_Sant_Adria_del_Besos.json"
-CLUSTER_IDS = [1, 2, 3, 5, 6, 7, 8, 9]  # List of cluster IDs to visualize (can be single ID or multiple)
+JSON_PATH = "outputs/Sant_Boi_de_Llobregat/20250813_203419/vegetation_clusters_combined_Sant_Boi_de_Llobregat.json"
+CLUSTER_IDS = [1, 2, 3, 5, 6, 8]  # List of cluster IDs to visualize (can be single ID or multiple)
+MUNICIPALITY_STATS_JSON = "outputs/municipality_statistics/municipality_ndvi_statistics.json"  # Path to municipality statistics JSON
+CREATE_COMPARISON_CSV = True  # Set to True to generate municipality-cluster comparison CSV
+COLOR_CODE_NDVI = True  # Set to True to color-code cells based on NDVI values (higher = greener)
 # =================================
 
 import json
@@ -14,6 +17,7 @@ import geopandas as gpd
 import requests
 from PIL import Image
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from loguru import logger
 import warnings
@@ -258,7 +262,7 @@ def create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox,
     ax.set_ylim(municipality_bbox[1], municipality_bbox[3])
     ax.set_xlabel('Longitude', fontsize=20)
     ax.set_ylabel('Latitude', fontsize=20)
-    #ax.set_title(f'{municipality} - {len(clusters_data)} Clusters\nICGC Orthophoto', fontsize=30, fontweight='bold')
+    ax.set_title(f'{municipality} - {len(clusters_data)} Clusters', fontsize=20, fontweight='bold')
     
     # Increase tick font size
     ax.tick_params(axis='both', which='major', labelsize=14)
@@ -349,7 +353,7 @@ def create_temporal_plot(clusters_data, data, output_dir):
     # Customize plot
     ax.set_xlabel('Year', fontsize=20)
     ax.set_ylabel('NDVI', fontsize=20)
-    # ax.set_title(f'{municipality} - {len(clusters_data)} Clusters NDVI Evolution', fontsize=30, fontweight='bold')
+    ax.set_title(f'{municipality} - {len(clusters_data)} Clusters NDVI Evolution', fontsize=20, fontweight='bold')
 
     ax.set_ylim(0, 1)
     ax.grid(True, alpha=0.3)
@@ -387,7 +391,7 @@ def create_temporal_plot(clusters_data, data, output_dir):
         
         # Use the secondary axis for positioning cluster labels
         ax2.text(max(years) + 0.5, adjusted_y, label, 
-               color=color, fontsize=14,
+               fontsize=16,
                verticalalignment='center', horizontalalignment='left',
                transform=ax2.transData)
 
@@ -412,6 +416,247 @@ def create_temporal_plot(clusters_data, data, output_dir):
     return str(filepath)
 
 
+def load_municipality_stats(json_path):
+    """Load municipality NDVI statistics from JSON file."""
+    logger.info(f"Loading municipality statistics from: {json_path}")
+    
+    with open(json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    return data
+
+
+def extract_municipality_name_from_cluster_data(cluster_data):
+    """Extract municipality name from cluster JSON metadata."""
+    if 'metadata' in cluster_data and 'municipality' in cluster_data['metadata']:
+        return cluster_data['metadata']['municipality']
+    elif 'metadata' in cluster_data and 'config_parameters' in cluster_data['metadata']:
+        return cluster_data['metadata']['config_parameters'].get('municipality_name', 'Unknown')
+    else:
+        return 'Unknown'
+
+
+def find_cluster_by_id(cluster_data, cluster_id):
+    """Find a specific cluster by ID in the cluster data."""
+    # Check both greening and browning trends
+    for trend_type in ['greening', 'browning']:
+        if trend_type in cluster_data.get('trends', {}):
+            clusters = cluster_data['trends'][trend_type].get('clusters', [])
+            for cluster in clusters:
+                if cluster.get('cluster_id') == cluster_id:
+                    return cluster, trend_type
+    return None, None
+
+
+def extract_cluster_ndvi_profile(cluster):
+    """Extract NDVI temporal profile from cluster data."""
+    if 'temporal_profile' in cluster:
+        temporal_profile = cluster['temporal_profile']
+        if 'mean_ndvi_per_year' in temporal_profile:
+            return temporal_profile['mean_ndvi_per_year']
+        elif 'yearly_mean_ndvi' in temporal_profile:
+            return temporal_profile['yearly_mean_ndvi']
+        elif 'mean_ndvi_by_year' in temporal_profile:
+            return temporal_profile['mean_ndvi_by_year']
+    return {}
+
+
+def create_comparison_table(municipality_stats, cluster_data, cluster_ids, municipality_name, output_dir):
+    """Create the comparison table combining municipality and cluster data."""
+    logger.info(f"Creating comparison table for {municipality_name}")
+    
+    # Find municipality data with better matching
+    municipality_data = None
+    if 'municipalities' in municipality_stats:
+        # First try exact match
+        if municipality_name in municipality_stats['municipalities']:
+            municipality_data = municipality_stats['municipalities'][municipality_name]
+        else:
+            # Try normalized matching
+            normalized_search = normalize_text(municipality_name)            
+            for muni_name, muni_data in municipality_stats['municipalities'].items():
+                normalized_muni = normalize_text(muni_name)                
+                if normalized_muni == normalized_search:
+                    municipality_data = muni_data
+                    break
+            
+            # If still not found, try partial matching
+            if not municipality_data:
+                for muni_name, muni_data in municipality_stats['municipalities'].items():
+                    normalized_muni = normalize_text(muni_name)
+                    if normalized_search in normalized_muni or normalized_muni in normalized_search:
+                        municipality_data = muni_data
+                        break
+    
+    if not municipality_data:
+        # List available municipalities for debugging
+        available_munis = list(municipality_stats['municipalities'].keys())[:10]
+        logger.error(f"Municipality data not found for: '{municipality_name}'")
+        logger.error(f"Available municipalities (first 10): {available_munis}")
+        return None, None, None
+    
+    # Get years from municipality data
+    years = municipality_data.get('years', [])
+    if not years:
+        logger.error("No years found in municipality data")
+        return None, None, None
+    
+    # Initialize the comparison table
+    comparison_data = []
+    
+    for year in years:
+        year_str = str(year)
+        row = {
+            'Year': year,
+            'Municipality': municipality_name
+        }
+        
+        # Add municipality general statistics
+        general_stats = municipality_data.get('general', {}).get('yearly', {})
+        if year_str in general_stats:
+            year_data = general_stats[year_str]
+            row['Municipality_Avg_NDVI'] = year_data.get('mean_ndvi', np.nan)
+            row['Municipality_Vegetation_Avg_NDVI'] = year_data.get('vegetation_mean_ndvi', np.nan)
+        else:
+            row['Municipality_Avg_NDVI'] = np.nan
+            row['Municipality_Vegetation_Avg_NDVI'] = np.nan
+        
+        # Add cluster statistics
+        for cluster_id in cluster_ids:
+            cluster, trend_type = find_cluster_by_id(cluster_data, cluster_id)
+            
+            if cluster:
+                # Extract NDVI profile for this cluster
+                ndvi_profile = extract_cluster_ndvi_profile(cluster)
+                
+                # Get NDVI value for this year
+                cluster_ndvi = np.nan
+                if year_str in ndvi_profile:
+                    cluster_ndvi = ndvi_profile[year_str]
+                
+                # Add to row (only NDVI value)
+                row[f'Cluster_{cluster_id}_NDVI'] = cluster_ndvi
+            else:
+                # Cluster not found
+                row[f'Cluster_{cluster_id}_NDVI'] = np.nan
+        
+        comparison_data.append(row)
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(comparison_data)
+    
+    fixed_columns = ['Year', 'Municipality_Avg_NDVI', 'Municipality_Vegetation_Avg_NDVI']
+    
+    cluster_columns = []
+    for cluster_id in cluster_ids:
+        cluster_columns.append(f'Cluster_{cluster_id}_NDVI')
+    
+    df = df[fixed_columns + cluster_columns]
+    
+    column_mapping = {
+        'Municipality_Avg_NDVI': 'Average',
+        'Municipality_Vegetation_Avg_NDVI': 'Avg > 0.2'
+    }
+    
+    # Add cluster column mappings
+    for cluster_id in cluster_ids:
+        column_mapping[f'Cluster_{cluster_id}_NDVI'] = f'Cluster {cluster_id}'
+    
+    df = df.rename(columns=column_mapping)
+    
+    # Save to CSV
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    cluster_ids_str = '_'.join([str(cid) for cid in cluster_ids])
+    csv_filename = f"municipality_cluster_comparison_{cluster_ids_str}.csv"
+    csv_filepath = output_path / csv_filename
+    
+    df.to_csv(csv_filepath, index=False, float_format='%.4f')
+    
+    # Save table as PNG image
+    png_filename = f"municipality_cluster_comparison_{cluster_ids_str}.png"
+    png_filepath = output_path / png_filename
+    
+    # Create table visualization
+    fig, ax = plt.subplots(figsize=(16, max(8, len(df) * 0.4)))
+    ax.axis('tight')
+    ax.axis('off')  
+    df_display = df.copy()
+
+    # Format table
+    df_display['Year'] = df_display['Year'].astype(int).astype(str)  
+    numeric_columns = df_display.select_dtypes(include=[np.number]).columns
+    for col in numeric_columns:
+        df_display[col] = df_display[col].apply(lambda x: f"{x:.3f}" if not pd.isna(x) else "NaN")
+    
+    # Create the table
+    table = ax.table(cellText=df_display.values, 
+                    colLabels=df_display.columns,
+                    cellLoc='center', 
+                    loc='center',
+                    bbox=[0, 0, 1, 1])
+    
+    # Style the table
+    table.auto_set_font_size(False)
+    table.set_fontsize(16)
+    for i in range(len(df_display.columns)):
+        table[(0, i)].set_facecolor("#f0f0f0")
+        table[(0, i)].set_text_props(weight='bold', color='black')
+    if COLOR_CODE_NDVI:
+        df_numeric = df.copy()
+        colormap = plt.cm.Greens
+        ndvi_columns = [col for col in df_numeric.columns if col != 'Year']
+        all_ndvi_values = []
+        for col in ndvi_columns:
+            values = df_numeric[col].dropna()
+            all_ndvi_values.extend(values.tolist())
+        
+        if all_ndvi_values:
+            min_ndvi = min(all_ndvi_values)
+            max_ndvi = max(all_ndvi_values)
+            
+            # Apply colors to data cells
+            for i in range(1, len(df_display) + 1):
+                for j in range(len(df_display.columns)):
+                    col_name = df_display.columns[j]
+                    
+                    if col_name == 'Year':
+                        table[(i, j)].set_facecolor('#f8f8f8')
+                    else:
+                        try:
+                            value = df_numeric.iloc[i-1, j]
+                            if not pd.isna(value) and min_ndvi != max_ndvi:
+                                normalized_value = (value - min_ndvi) / (max_ndvi - min_ndvi)
+                                color = colormap(normalized_value)
+                                table[(i, j)].set_facecolor(color)
+                                if value > 0.5:
+                                    table[(i, j)].set_text_props(color='white')
+                                else:
+                                    table[(i, j)].set_text_props(color='black')
+                            else:
+                                table[(i, j)].set_facecolor('#f0f0f0')
+                                table[(i, j)].set_text_props(color='black')
+                        except:
+                            table[(i, j)].set_facecolor('#f0f0f0')
+                            table[(i, j)].set_text_props(color='black')
+    else:
+        for i in range(1, len(df_display) + 1):
+            for j in range(len(df_display.columns)):
+                if i % 2 == 0:
+                    table[(i, j)].set_facecolor('#f0f0f0')
+                else:
+                    table[(i, j)].set_facecolor('#ffffff')
+    
+    plt.title(f'{municipality_name} - Municipality vs Cluster NDVI Comparison', fontsize=20, fontweight='bold', pad=20)
+
+    plt.tight_layout()
+    plt.savefig(png_filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    return str(csv_filepath), str(png_filepath), df
+
+
 def main(json_path=JSON_PATH, cluster_ids=CLUSTER_IDS):
     """Main function to create combined cluster visualizations."""
     try:
@@ -430,20 +675,27 @@ def main(json_path=JSON_PATH, cluster_ids=CLUSTER_IDS):
         spatial_path = create_spatial_map(clusters_data, data, municipality_gdf, municipality_bbox, output_dir)
         temporal_path = create_temporal_plot(clusters_data, data, output_dir)
         
-        # Print summary
-        cluster_ids_str = ', '.join([str(cid) for cid, _, _ in clusters_data])
-        print(f"Created combined visualizations for clusters {cluster_ids_str}:")
-        print(f"  Spatial map: {spatial_path}")
-        print(f"  Temporal plot: {temporal_path}")
-        
-        print(f"\nCluster details:")
-        for cluster_id, cluster, trend in clusters_data:
-            n_traces = len(cluster['traces'])
-            print(f"  Cluster {cluster_id}: {n_traces} traces ({trend} trend)")
-        
+        # Create comparison CSV if requested
+        csv_path = None
+        png_path = None
+        comparison_df = None
+        if CREATE_COMPARISON_CSV:
+            try:
+                municipality_stats = load_municipality_stats(MUNICIPALITY_STATS_JSON)
+                result = create_comparison_table(
+                    municipality_stats, data, cluster_ids, municipality, output_dir
+                )
+                csv_path, png_path, comparison_df = result
+                
+            except Exception as e:
+                logger.error(f"Error creating comparison CSV: {e}")
+                
         return {
             'spatial_map': spatial_path,
             'temporal_plot': temporal_path,
+            'comparison_csv': csv_path,
+            'comparison_png': png_path,
+            'comparison_df': comparison_df,
             'clusters': clusters_data
         }
         
