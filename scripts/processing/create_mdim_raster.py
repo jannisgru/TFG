@@ -1,28 +1,75 @@
 """
-Create a multidimensional raster from Landsat time series for ALL AMB municipalities with NDVI values.
-This script creates individual municipality datasets while also allowing overall analysis.
+Create a multidimensional raster from Landsat time series for different spatial entities.
+This script supports creating MDIM rasters for:
+- AMB municipalities (default)
+- PEIN natural parks 
+- XPN natural parks
+
+USAGE EXAMPLES:
+1. All municipalities: Set PROCESSING_MODE = "municipalities", FILTER_ENTITY = None
+2. Single municipality: Set PROCESSING_MODE = "municipalities", FILTER_ENTITY = "Barcelona"
+3. All PEIN parks: Set PROCESSING_MODE = "pein", FILTER_ENTITY = None
+4. Single PEIN park: Set PROCESSING_MODE = "pein", FILTER_ENTITY = "Serra de Collserola"
+5. All XPN parks: Set PROCESSING_MODE = "xpn", FILTER_ENTITY = None
+6. Single XPN park: Set PROCESSING_MODE = "xpn", FILTER_ENTITY = "Parc del Garraf"
 """
 
 # ==== CONFIGURABLE PARAMETERS ====
-CONFIG_PATH = "config/config.yaml"
+# Data paths
+RAW_DATA_PATH = "data/raw/GEE_raw"
+PROCESSED_DATA_PATH = "data/processed"
+BOUNDARIES_SHAPEFILE = "data/boundaries/AMB_Municipalities.shp"  # Main boundaries shapefile
 LOG_PATH = "logs/landsat_processing_{time:YYYY-MM-DD}.log"
 
+# Time range configuration
+START_YEAR = 1984
+END_YEAR = 2025
+YEAR_STEP = 1
+FILE_PATTERN = "{year}.tif"  # Pattern for Landsat files
+
+# Processing options
+PROCESSING_MODE = "pein"  # Options: "municipalities", "pein", "xpn"
+FILTER_ENTITY = "CLR"  # Filter to specific entity (municipality/park name), set to None for all
+OUTPUT_FILE_NAME = "mdim_clr.nc"  # Will be auto-modified based on processing mode
+OUTPUT_DTYPE = 'float32'  # Data type for output arrays
+
+# NDVI classification
 NDVI_THRESHOLDS = [(-1.0, 0.0), (0.0, 0.1), (0.1, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 1.0)]
 NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation', 'Dense vegetation', 'Very dense vegetation']
-BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
-MUNICIPALITY_NAME_COLS = ['name']
-OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_AMB.nc"
-START_YEAR = None   # Set to None to use config file value
-END_YEAR = None     # Set to None to use config file value
-YEAR_STEP = None       # Set to None to use config file value
-# Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
-FILTER_MUNICIPALITY = None  # e.g. "L'Eixample" or None
 
-# Natural Parks configuration
-PEIN_SHAPEFILE = "data/boundaries/PEIN_clipped.shp"  # PEIN natural parks
-XPN_SHAPEFILE = "data/boundaries/XPN_clipped.shp"    # XPN natural parks
-INCLUDE_NATURAL_PARKS = True                         # Whether to include natural park data
+# Landsat band configuration
+BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
+NODATA_VALUE = -9999
+
+# Shapefile-specific configurations
+SHAPEFILE_CONFIGS = {
+    "municipalities": {
+        "shapefile": "data/boundaries/AMB_Municipalities.shp",
+        "name_columns": ['name', 'NAME', 'nom', 'NOM'],
+        "id_column": None,  # Will use auto-generated IDs
+        "output_prefix": "mdim_",
+        "description": "AMB Municipality"
+    },
+    "pein": {
+        "shapefile": "data/boundaries/PEIN_clipped.shp",
+        "name_columns": ['NOM', 'nom', 'name', 'NAME', 'CODI_PEIN'],
+        "id_column": 'CODI_PEIN',
+        "output_prefix": "mdim_pein_",
+        "description": "PEIN Natural Park"
+    },
+    "xpn": {
+        "shapefile": "data/boundaries/XPN_clipped.shp", 
+        "name_columns": ['NOM', 'nom', 'name', 'NAME', 'ACRONIM'],
+        "id_column": 'ACRONIM',
+        "output_prefix": "mdim_xpn_",
+        "description": "XPN Natural Park"
+    }
+}
+
+# Additional features to include
+INCLUDE_NATURAL_PARKS = True  # Whether to include natural park overlays (only for municipality mode)
+PEIN_SHAPEFILE = "data/boundaries/PEIN_clipped.shp"  # PEIN natural parks overlay
+XPN_SHAPEFILE = "data/boundaries/XPN_clipped.shp"    # XPN natural parks overlay
 # ================================
 
 import warnings
@@ -31,7 +78,6 @@ import pandas as pd
 import xarray as xr
 import rasterio
 import geopandas as gpd
-import yaml
 from pathlib import Path
 from datetime import datetime
 from tqdm import tqdm
@@ -50,37 +96,78 @@ logger.add(
 )
 
 
-def load_config(config_path=CONFIG_PATH):
-    """Load configuration from YAML file with proper encoding."""
-    with open(config_path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+def load_config(config_path=None):
+    """Load configuration from parameters (no longer uses YAML file)."""
+    return {
+        'paths': {
+            'raw_data': RAW_DATA_PATH,
+            'processed_data': PROCESSED_DATA_PATH,
+            'boundaries': BOUNDARIES_SHAPEFILE
+        },
+        'analysis': {
+            'start_year': START_YEAR,
+            'end_year': END_YEAR,
+            'year_step': YEAR_STEP
+        },
+        'data': {
+            'file_pattern': FILE_PATTERN,
+            'bands': BAND_NAMES,
+            'nodata_value': NODATA_VALUE
+        }
+    }
 
 
-def load_municipalities(boundaries_path):
-    """Load all municipalities from shapefile."""
-    logger.info(f"Loading municipalities from: {boundaries_path}")
-    for encoding in ['utf-8', 'cp1252']:
+def load_boundaries(shapefile_path, processing_mode):
+    """Load boundaries from shapefile based on processing mode."""
+    logger.info(f"Loading {processing_mode} boundaries from: {shapefile_path}")
+    
+    # Get configuration for the processing mode
+    config = SHAPEFILE_CONFIGS.get(processing_mode)
+    if not config:
+        raise ValueError(f"Unknown processing mode: {processing_mode}. Available: {list(SHAPEFILE_CONFIGS.keys())}")
+    
+    # Try different encodings
+    for encoding in ['utf-8', 'cp1252', 'latin1']:
         try:
-            gdf = gpd.read_file(boundaries_path, encoding=encoding)
+            gdf = gpd.read_file(shapefile_path, encoding=encoding)
             break
         except UnicodeDecodeError:
             continue
     else:
         raise UnicodeDecodeError("Could not read shapefile with any encoding")
-    name_col = next((col for col in MUNICIPALITY_NAME_COLS if col in gdf.columns), None)
+    
+    # Find the name column
+    name_col = None
+    for col in config['name_columns']:
+        if col in gdf.columns:
+            name_col = col
+            break
+    
     if not name_col:
+        # Fallback: find any object column that's not geometry
         name_col = next((col for col in gdf.columns if gdf[col].dtype == 'object' and col != 'geometry'), None)
+    
     if not name_col:
-        raise ValueError(f"Could not find name column in {list(gdf.columns)}")
-    gdf['municipality_name'] = gdf[name_col]
+        raise ValueError(f"Could not find name column in {list(gdf.columns)}. Expected one of: {config['name_columns']}")
+    
+    # Set standardized name column
+    gdf['entity_name'] = gdf[name_col]
+    
+    # Add ID column if specified
+    if config['id_column'] and config['id_column'] in gdf.columns:
+        gdf['entity_id'] = gdf[config['id_column']]
+    else:
+        gdf['entity_id'] = range(1, len(gdf) + 1)
+    
+    logger.info(f"Loaded {len(gdf)} {processing_mode} entities using name column: {name_col}")
     return gdf
 
 
 def load_natural_parks():
-    """Load natural parks data (PEIN and XPN)."""
+    """Load natural parks data (PEIN and XPN) - only used for municipality mode overlays."""
     natural_parks = {}
     
-    if not INCLUDE_NATURAL_PARKS:
+    if not INCLUDE_NATURAL_PARKS or PROCESSING_MODE != "municipalities":
         return natural_parks
     
     # Load PEIN data
@@ -89,7 +176,7 @@ def load_natural_parks():
         try:
             pein_gdf = gpd.read_file(pein_path)
             natural_parks['pein'] = pein_gdf
-            logger.info(f"Loaded PEIN data: {len(pein_gdf)} polygons")
+            logger.info(f"Loaded PEIN overlay data: {len(pein_gdf)} polygons")
         except Exception as e:
             logger.warning(f"Could not load PEIN data from {pein_path}: {e}")
     else:
@@ -101,7 +188,7 @@ def load_natural_parks():
         try:
             xpn_gdf = gpd.read_file(xpn_path)
             natural_parks['xpn'] = xpn_gdf
-            logger.info(f"Loaded XPN data: {len(xpn_gdf)} polygons")
+            logger.info(f"Loaded XPN overlay data: {len(xpn_gdf)} polygons")
         except Exception as e:
             logger.warning(f"Could not load XPN data from {xpn_path}: {e}")
     else:
@@ -186,19 +273,21 @@ def create_natural_park_masks(src, natural_parks, out_transform, height, width):
     return masks
 
 
-def create_municipality_masks(src, boundaries_gdf, out_transform, height, width):
-    """Create municipality ID raster with individual masks."""
-    municipality_ids = np.zeros((height, width), dtype=np.int16)
-    municipality_names = []
+def create_entity_masks(src, boundaries_gdf, out_transform, height, width, processing_mode):
+    """Create entity ID raster with individual masks (works for municipalities, PEIN, or XPN)."""
+    entity_ids = np.zeros((height, width), dtype=np.int16)
+    entity_names = []
+    entity_original_ids = []
     
     for idx, (_, row) in enumerate(boundaries_gdf.iterrows(), 1):
-        municipality_names.append(row['municipality_name'])
+        entity_names.append(row['entity_name'])
+        entity_original_ids.append(row['entity_id'])
         try:
-            muni_image, _ = mask(src, [row['geometry']], crop=False, 
+            entity_image, _ = mask(src, [row['geometry']], crop=False, 
                                all_touched=True, filled=False)
             
             # Extract clipped region
-            muni_clipped = muni_image[0][
+            entity_clipped = entity_image[0][
                 int((out_transform[5] - src.transform[5]) / src.transform[4]):
                 int((out_transform[5] - src.transform[5]) / src.transform[4]) + height,
                 int((out_transform[2] - src.transform[2]) / src.transform[0]):
@@ -206,19 +295,19 @@ def create_municipality_masks(src, boundaries_gdf, out_transform, height, width)
             ]
             
             # Resize if needed
-            scale_y = municipality_ids.shape[0] / muni_clipped.shape[0]
-            scale_x = municipality_ids.shape[1] / muni_clipped.shape[1]
-            muni_clipped = zoom(muni_clipped, (scale_y, scale_x), order=0)    
-            municipality_ids[~muni_clipped.mask] = idx
+            scale_y = entity_ids.shape[0] / entity_clipped.shape[0]
+            scale_x = entity_ids.shape[1] / entity_clipped.shape[1]
+            entity_clipped = zoom(entity_clipped, (scale_y, scale_x), order=0)    
+            entity_ids[~entity_clipped.mask] = idx
             
         except Exception as e:
-            logger.warning(f"Could not process municipality {row['municipality_name']}: {e}")
+            logger.warning(f"Could not process {processing_mode} entity {row['entity_name']}: {e}")
             continue
     
-    return municipality_ids, municipality_names
+    return entity_ids, entity_names, entity_original_ids
 
 
-def load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_masks=None, municipality_masks=None):
+def load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_masks=None, entity_masks=None, processing_mode="municipalities"):
     """Load a Landsat file and clip it to boundaries."""
     with rasterio.open(file_path) as src:
         # Clip to boundaries
@@ -231,7 +320,7 @@ def load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_mas
         
         # Handle NoData values properly - convert -9999 to NaN
         landsat_data = out_image.astype(np.float32)
-        landsat_data[landsat_data == -9999] = np.nan
+        landsat_data[landsat_data == NODATA_VALUE] = np.nan
         
         # Create dataset with landsat structure
         ds = xr.Dataset(
@@ -246,17 +335,19 @@ def load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_mas
             }
         )
         
-        # Add pre-computed municipality masks (only if processing multiple municipalities)
-        if municipality_masks is not None:
-            municipality_ids, municipality_names = municipality_masks
-            ds['municipality_id'] = (['y', 'x'], municipality_ids)
+        # Add pre-computed entity masks (for all processing modes)
+        if entity_masks is not None:
+            entity_ids, entity_names, entity_original_ids = entity_masks
+            ds['entity_id'] = (['y', 'x'], entity_ids)
             ds.attrs.update({
-                'municipality_names': municipality_names,
-                'n_municipalities': len(municipality_names)
+                'entity_names': entity_names,
+                'entity_original_ids': entity_original_ids,
+                'n_entities': len(entity_names),
+                'processing_mode': processing_mode
             })
         
-        # Add pre-computed natural park masks as grouped variable
-        if natural_park_masks:
+        # Add pre-computed natural park masks as grouped variable (only for municipality mode)
+        if natural_park_masks and processing_mode == "municipalities":
             # Create a list to store natural park data and park names
             natural_data = []
             park_names = []
@@ -346,61 +437,80 @@ def classify_ndvi(ndvi):
     return ndvi_class.astype('int8')
 
 
-def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
-    """Create a multidimensional raster for ALL AMB municipalities."""
-    config = load_config(config_path)
-
+def create_multidimensional_raster(processing_mode=None, filter_entity=None):
+    """Create a multidimensional raster for specified processing mode (municipalities, pein, or xpn)."""
+    # Use global parameters if not specified
+    mode = processing_mode or PROCESSING_MODE
+    entity_filter = filter_entity or FILTER_ENTITY
+    
+    # Validate processing mode
+    if mode not in SHAPEFILE_CONFIGS:
+        raise ValueError(f"Invalid processing mode: {mode}. Available: {list(SHAPEFILE_CONFIGS.keys())}")
+    
+    config = load_config()
+    shape_config = SHAPEFILE_CONFIGS[mode]
+    
     # Setup paths
     raw_data_path = Path(config['paths']['raw_data'])
     processed_data_path = Path(config['paths']['processed_data'])
-    boundaries_path = Path(config['paths']['boundaries'])
-
-    # Use script values if set, otherwise config values
-    start_year = START_YEAR if START_YEAR is not None else config.get('analysis', {}).get('start_year')
-    end_year = END_YEAR if END_YEAR is not None else config.get('analysis', {}).get('end_year')
-    year_step = YEAR_STEP if YEAR_STEP is not None else config.get('analysis', {}).get('year_step')
-    file_pattern = config['data']['file_pattern']
-
-    logger.info(f"Creating multidimensional raster for ALL AMB municipalities ({start_year}-{end_year})")
-
-    # Load municipalities
-    boundaries_gdf = load_municipalities(boundaries_path)
-    if FILTER_MUNICIPALITY is not None:
-        boundaries_gdf = boundaries_gdf[boundaries_gdf['municipality_name'] == FILTER_MUNICIPALITY]
-        logger.info(f"Filtered to municipality: {FILTER_MUNICIPALITY} ({len(boundaries_gdf)} found)")
-    else:
-        logger.info(f"Processing {len(boundaries_gdf)} municipalities")
     
-    # Load natural parks data
+    # Use the shapefile for the selected processing mode
+    boundaries_path = Path(shape_config['shapefile'])
+    
+    logger.info(f"Creating multidimensional raster for {mode.upper()} ({START_YEAR}-{END_YEAR})")
+
+    # Load boundaries
+    boundaries_gdf = load_boundaries(boundaries_path, mode)
+    
+    # Filter to specific entity if requested
+    if entity_filter is not None:
+        # capture possible values from the unfiltered boundaries
+        all_possible_values = sorted(set(str(x) for x in boundaries_gdf['entity_name'].values))
+        original_count = len(boundaries_gdf)
+        filtered = boundaries_gdf[boundaries_gdf['entity_name'] == entity_filter]
+        logger.info(f"Filtered to {mode}: {entity_filter} ({len(filtered)} found out of {original_count})")
+        if len(filtered) == 0:
+            # log and print possible values from the original list, then exit cleanly
+            values_str = "\n".join([f"  - {val}" for val in all_possible_values])
+            logger.error(f"No {mode} found with name: {entity_filter}. Possible values:\n{values_str}")
+            print(f"\nPossible values for {mode}:\n{values_str}")
+            logger.info("Exiting without error because filter did not match any entity.")
+            return None
+        # use filtered dataframe going forward
+        boundaries_gdf = filtered
+    else:
+        logger.info(f"Processing all {len(boundaries_gdf)} {mode} entities")
+    
+    # Load natural parks data (only for municipality mode as overlays)
     natural_parks = load_natural_parks()
-    if natural_parks:
+    if natural_parks and mode == "municipalities":
         park_info = []
         if 'pein' in natural_parks:
             park_info.append(f"PEIN: {len(natural_parks['pein'])} polygons")
         if 'xpn' in natural_parks:
             park_info.append(f"XPN: {len(natural_parks['xpn'])} polygons")
-        logger.info(f"Natural parks loaded: {', '.join(park_info)}")
+        logger.info(f"Natural parks overlays loaded: {', '.join(park_info)}")
     else:
-        logger.info("No natural parks data loaded")
+        logger.info(f"No natural parks overlays (mode: {mode})")
     
     # Find available files
     available_files = []
     available_years = []
     
-    for year in range(start_year, end_year + 1, year_step):
-        file_path = raw_data_path / file_pattern.format(year=year)
+    for year in range(START_YEAR, END_YEAR + 1, YEAR_STEP):
+        file_path = raw_data_path / FILE_PATTERN.format(year=year)
         if file_path.exists():
             available_files.append(file_path)
             available_years.append(year)
     
     if not available_files:
-        raise FileNotFoundError(f"No files found in {raw_data_path} with pattern {file_pattern}")
+        raise FileNotFoundError(f"No files found in {raw_data_path} with pattern {FILE_PATTERN}")
 
     logger.info(f"Found {len(available_files)} files for years: {min(available_years)}-{max(available_years)}")
     
     # Create masks once before processing all files (optimization)
     natural_park_masks = None
-    municipality_masks = None
+    entity_masks = None
     
     # Use the first file to get the spatial reference for creating masks
     with rasterio.open(available_files[0]) as first_src:
@@ -409,16 +519,16 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
         clipped_bounds = mask(first_src, boundaries_gdf.geometry, crop=True)[0]
         height, width = clipped_bounds.shape[1], clipped_bounds.shape[2]
         
-        # Create municipality masks once (only if processing multiple municipalities)
-        if FILTER_MUNICIPALITY is None:
-            logger.info("Creating municipality masks (one-time operation)...")
-            municipality_masks = create_municipality_masks(
-                first_src, boundaries_gdf, out_transform, height, width
+        # Create entity masks (works for municipalities, PEIN, or XPN)
+        if entity_filter is None:  # Only create masks when processing multiple entities
+            logger.info(f"Creating {mode} entity masks (one-time operation)...")
+            entity_masks = create_entity_masks(
+                first_src, boundaries_gdf, out_transform, height, width, mode
             )
         
-        # Create natural park masks once
-        if natural_parks:
-            logger.info("Creating natural park masks (one-time operation)...")
+        # Create natural park masks (only for municipality mode)
+        if natural_parks and mode == "municipalities":
+            logger.info("Creating natural park overlay masks (one-time operation)...")
             natural_park_masks = create_natural_park_masks(
                 first_src, natural_parks, out_transform, height, width
             )
@@ -428,13 +538,14 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     logger.info("Loading and clipping files...")
     for file_path, year in tqdm(zip(available_files, available_years), total=len(available_files), desc="Processing files"):
         try:
-            ds = load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_masks, municipality_masks)
+            ds = load_and_clip_landsat_file(file_path, year, boundaries_gdf, natural_park_masks, entity_masks, mode)
             # Convert landsat data to desired output type
             ds['landsat'] = ds['landsat'].astype(OUTPUT_DTYPE)
             datasets.append(ds)
         except Exception as e:
             logger.warning(f"Failed to process {file_path}: {e}")
             continue
+    
     if not datasets:
         raise RuntimeError("No datasets were successfully processed")
     
@@ -449,8 +560,8 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     ndvi = calculate_ndvi(combined_ds)
     combined_ds['ndvi'] = (['time', 'y', 'x'], ndvi.data)
     
-    # Only add classification if processing multiple municipalities
-    if FILTER_MUNICIPALITY is None:
+    # Add classification if processing multiple entities
+    if entity_filter is None:
         ndvi_class = classify_ndvi(combined_ds['ndvi'])
         combined_ds['ndvi_class'] = (['time', 'y', 'x'], ndvi_class.data)
     
@@ -486,28 +597,39 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     if 'natural' in combined_ds:
         derived_vars.append('NATURAL_PARKS')
     
+    # Generate output filename
+    if entity_filter:
+        # Single entity
+        safe_name = entity_filter.replace(' ', '_').replace('/', '_').replace("'", "").replace('-', '_')
+        output_filename = f"{shape_config['output_prefix']}{safe_name}.nc"
+    else:
+        # All entities
+        output_filename = f"{shape_config['output_prefix']}all.nc"
+    
+    entity_description = entity_filter or f"all {len(boundaries_gdf)} {mode}"
+    
     combined_ds.attrs.update({
-        'title': f'AMB Landsat Time Series - {FILTER_MUNICIPALITY or "All Municipalities"}',
-        'description': f'Landsat Collection 2 Level 2 data for {FILTER_MUNICIPALITY or f"all {len(boundaries_gdf)} AMB municipalities"} ({min(available_years)}-{max(available_years)})',
+        'title': f'{shape_config["description"]} Landsat Time Series - {entity_filter or f"All {mode.title()}"}',
+        'description': f'Landsat Collection 2 Level 2 data for {entity_description} ({min(available_years)}-{max(available_years)})',
         'source': 'Google Earth Engine',
         'processing_level': 'Collection 2 Level 2',
         'spatial_resolution': '30m',
         'projection': 'EPSG:4326',
-        'total_municipalities': len(boundaries_gdf),
-        'municipality_names': FILTER_MUNICIPALITY or ', '.join(boundaries_gdf['municipality_name'].tolist()),
+        'processing_mode': mode,
+        'total_entities': len(boundaries_gdf),
+        'entity_names': entity_filter or ', '.join(boundaries_gdf['entity_name'].tolist()),
         'n_years': len(available_years),
         'bands': ', '.join(BAND_NAMES),
         'derived_variables': ', '.join(derived_vars),
-        'natural_parks_included': 'true' if INCLUDE_NATURAL_PARKS else 'false',
+        'natural_parks_included': 'true' if (INCLUDE_NATURAL_PARKS and mode == "municipalities") else 'false',
         'created_date': datetime.now().isoformat(),
         'individual_analysis_supported': 'true',
         'nodata_handling': 'NaN for invalid values'
     })
     
     # Save dataset
-    output_file_name = OUTPUT_FILE_NAME
     processed_data_path.mkdir(parents=True, exist_ok=True)
-    output_file = processed_data_path / output_file_name
+    output_file = processed_data_path / output_filename
 
     # Set encoding to ensure proper data types matching target structure
     encoding = {
@@ -520,15 +642,15 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
     
     if 'ndvi_class' in combined_ds:
         encoding['ndvi_class'] = {'dtype': 'int8', 'zlib': True, 'complevel': 6}
-    if 'municipality_id' in combined_ds:
-        encoding['municipality_id'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}
+    if 'entity_id' in combined_ds:
+        encoding['entity_id'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}
     if 'natural' in combined_ds:
         encoding['natural'] = {'dtype': 'int16', 'zlib': True, 'complevel': 6}  # Integer encoding for natural parks
     
     combined_ds.to_netcdf(output_file, engine='netcdf4', encoding=encoding)
     
-    # Save natural parks mapping if included
-    if INCLUDE_NATURAL_PARKS and natural_parks:
+    # Save natural parks mapping if included (only for municipality mode)
+    if INCLUDE_NATURAL_PARKS and natural_parks and mode == "municipalities":
         park_mappings = []
         
         if 'pein' in natural_parks:
@@ -557,16 +679,17 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
             park_mapping_df.to_csv(park_mapping_file, index=False, encoding='utf-8')
             logger.info(f"Natural parks mapping saved to: {park_mapping_file}")
     
-    # Save municipality mapping (only if processing multiple municipalities)
-    if FILTER_MUNICIPALITY is None and municipality_masks is not None:
-        municipality_ids, municipality_names = municipality_masks
-        municipality_info = pd.DataFrame({
-            'municipality_name': municipality_names,
-            'municipality_id': range(1, len(municipality_names) + 1)
+    # Save entity mapping (only if processing multiple entities)
+    if entity_filter is None and entity_masks is not None:
+        entity_ids, entity_names, entity_original_ids = entity_masks
+        entity_info = pd.DataFrame({
+            'entity_name': entity_names,
+            'entity_id': range(1, len(entity_names) + 1),
+            'original_id': entity_original_ids
         })
-        municipality_info_file = processed_data_path / "municipality_mapping.csv"
-        municipality_info.to_csv(municipality_info_file, index=False, encoding='utf-8')
-        logger.info(f"Municipality mapping saved to: {municipality_info_file}")
+        entity_info_file = processed_data_path / f"{mode}_mapping.csv"
+        entity_info.to_csv(entity_info_file, index=False, encoding='utf-8')
+        logger.info(f"{mode.title()} mapping saved to: {entity_info_file}")
 
     logger.success("Dataset creation complete!")
     logger.info(f"Output file: {output_file}")
@@ -586,4 +709,10 @@ def create_multidimensional_raster_all_municipalities(config_path=CONFIG_PATH):
 
 
 if __name__ == "__main__":
-    create_multidimensional_raster_all_municipalities()
+    # Example usage:
+    # For municipalities (default): python create_mdim_raster.py
+    # For PEIN parks: Set PROCESSING_MODE = "pein" above
+    # For XPN parks: Set PROCESSING_MODE = "xpn" above
+    # For single entity: Set FILTER_ENTITY = "entity_name" above
+    
+    create_multidimensional_raster()

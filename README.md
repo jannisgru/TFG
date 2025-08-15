@@ -47,8 +47,7 @@ The Google Earth Engine script for data acquisition is located in `scripts/proce
 
 1. Place Landsat data in `data/raw/`
 2. Add boundary files to `data/boundaries/`
-3. Configure parameters in `config/config.yaml`
-4. Run analysis and visualization scripts from `scripts/`
+3. Run analysis and visualization scripts from `scripts/`
 
 ## Documentation
 

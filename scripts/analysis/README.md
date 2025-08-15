@@ -39,8 +39,6 @@ DBSCAN is robust to noise and can find clusters of varying shapes and sizes, mak
 
 ## Key Parameters
 
-Configure in `segment_config.yaml`:
-
 ### Segmentation Parameters
 | Parameter | Description |
 |-----------|-------------|
@@ -77,7 +75,6 @@ analysis/
 ├── config_loader.py           # YAML config loader
 ├── json_exporter.py           # JSON export utilities
 ├── segmentation_main.py       # Main pipeline entry point (contains VegetationSegmentationParameters)
-├── segment_config.yaml        # Main YAML config
 └── README.md
 ```
 

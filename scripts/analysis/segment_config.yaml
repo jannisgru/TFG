@@ -8,7 +8,7 @@
 # ==============================================================================
 segmentation:
   # Core algorithm parameters
-  min_cluster_size: 20                    # Minimum traces per vegetation cluster
+  min_cluster_size: 10                    # Minimum traces per vegetation cluster
   max_spatial_distance: 1000              # Maximum trace distance for spatial clustering (traces)
   min_vegetation_ndvi: 0.2                 # Minimum NDVI threshold to consider traces as vegetation (0-1)
   ndvi_variance_threshold: 0.003          # Minimum NDVI temporal variance to include traces (0-1)
@@ -19,7 +19,7 @@ segmentation:
 # ==============================================================================
 clustering:
   # DBSCAN clustering parameters
-  eps: 0.2                   # Epsilon: maximum distance between samples to be neighbors
+  eps: 0.25                   # Epsilon: maximum distance between samples to be neighbors
   min_pts: 5                       # min_pts: minimum traces in neighborhood to form cluster
   temporal_weight: 0.06                  # Weight for temporal vs spatial features (0-1, 0=spatial only)
   spatial_weight: 0.3                  # Weight for spatial coordinates in feature space (0-1)
@@ -29,9 +29,9 @@ clustering:
 # ==============================================================================
 data:
   # File paths
-  netcdf_path: "data/processed/mdim_Sant_Adria_del_Besos.nc"    # Input NetCDF file
-  municipality: "Sant Adria del Besos"                               # Municipality to analyze
-  output_dir: "outputs/Sant_Adria_del_Besos"              # Output directory
+  netcdf_path: "data/processed/mdim_pein_CLR.nc"    # Input NetCDF file
+  municipality: None                               # Municipality to analyze
+  output_dir: "outputs/PEIN/CLR"              # Output directory
 
 # ==============================================================================
 # EXPORT SETTINGS
@@ -45,7 +45,7 @@ export:
 # ==============================================================================
 visualization:
   # Visualization options
-  enable_3d_visualization: true        # Enable 3D interactive visualization creation
+  enable_3d_visualization: false        # Enable 3D interactive visualization creation
   enable_static_visualization: true    # Enable static 2D visualization creation
 
 # ============================================================================== 
