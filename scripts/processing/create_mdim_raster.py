@@ -12,17 +12,17 @@ NDVI_CLASS_NAMES = ['Water', 'Bare', 'Sparse vegetation', 'Moderate vegetation',
 BAND_NAMES = ['BLUE', 'GREEN', 'RED', 'NIR']
 MUNICIPALITY_NAME_COLS = ['name']
 OUTPUT_DTYPE = 'float32'  # More memory-efficient dtype (changable if needed to 'float64')
-OUTPUT_FILE_NAME = "mdim_AMB.nc"
+OUTPUT_FILE_NAME = "mdim_Torrelles_de_Llobregat_sen.nc"
 START_YEAR = None   # Set to None to use config file value
 END_YEAR = None     # Set to None to use config file value
 YEAR_STEP = None       # Set to None to use config file value
 # Optionally filter to a single municipality (set to None for all, or e.g. "L'Eixample")
-FILTER_MUNICIPALITY = None  # e.g. "L'Eixample" or None
+FILTER_MUNICIPALITY = "Torrelles de Llobregat"  # e.g. "L'Eixample" or None
 
 # Natural Parks configuration
 PEIN_SHAPEFILE = "data/boundaries/PEIN_clipped.shp"  # PEIN natural parks
 XPN_SHAPEFILE = "data/boundaries/XPN_clipped.shp"    # XPN natural parks
-INCLUDE_NATURAL_PARKS = True                         # Whether to include natural park data
+INCLUDE_NATURAL_PARKS = False                         # Whether to include natural park data
 # ================================
 
 import warnings
