@@ -3,7 +3,6 @@ description: Spatiotemporal Analysis of Vegetation Cover in Barcelona
 
 # Navigation links
 header_pages:
-  - index.md
   - methodology.md
   - results.md
   - examples.md
