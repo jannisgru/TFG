@@ -1,0 +1,18 @@
+title: TFG
+description: Spatiotemporal Vegetation Analysis of Barcelona Metropolitan Area
+
+# Navigation links
+header_pages:
+  - index.md
+  - methodology.md
+  - results.md
+  - examples.md
+
+# Theme settings
+theme: minima
+plugins:
+  - jekyll-feed
+
+# Site settings
+url: "https://jannisgru.github.io"
+baseurl: "/TFG"
