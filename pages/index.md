@@ -1,7 +1,6 @@
 ---
-layout: page
-title: Home
-permalink: /
+layout: home
+title: Spatiotemporal Analysis of Vegetation Cover in Barcelona
 ---
 
 # Spatiotemporal Analysis of Vegetation Cover in Barcelona
