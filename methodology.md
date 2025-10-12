@@ -4,8 +4,6 @@ title: Methodology
 permalink: /methodology/
 ---
 
-# Methodology
-
 ## Data Sources
 
 **Satellite Imagery**: Landsat 5, 7, and 8 annual composites (1985-2025) acquired through Google Earth Engine. Four spectral bands (Blue, Green, Red, NIR) processed at 30-meter resolution with cloud masking and atmospheric correction applied.

@@ -1,10 +1,8 @@
 ---
 layout: page
-title: TFG
+title: Spatiotemporal Analysis of Vegetation Cover in Barcelona
 permalink: /
 ---
-
-# Spatiotemporal Analysis of Vegetation Cover in Barcelona
 
 A comprehensive analysis framework for monitoring vegetation dynamics in the Barcelona Metropolitan Area using four decades of Landsat satellite data (1985-2025).
 

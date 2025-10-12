@@ -4,8 +4,6 @@ title: Results
 permalink: /results/
 ---
 
-# Results
-
 ## Temporal Analysis
 
 **NDVI Trends (1985-2025)**: Analysis reveals distinct temporal patterns across the Barcelona Metropolitan Area. Overall vegetation indices show stability in established green spaces with notable variations in urban periphery areas.
