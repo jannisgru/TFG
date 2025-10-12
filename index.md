@@ -24,16 +24,6 @@ Remote sensing enables efficient, large-scale monitoring of vegetation: indices 
 - **Analysis**: Space-time cube framework with DBSCAN clustering
 - **Output**: Interactive visualizations and spatiotemporal trend analysis
 
-## Quick Start
-
-```bash
-git clone https://github.com/jannisgru/TFG.git
-cd TFG
-conda env create -f environment.yml
-conda activate tfg
-python scripts/analysis/segmentation_main.py
-```
-
 ---
 
 *Bachelor's thesis project - Universitat Politècnica de Catalunya*

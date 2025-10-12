@@ -4,8 +4,6 @@ title: Methodology
 permalink: /methodology/
 ---
 
-# Methodology
-
 The analysis integrates multi-decadal Landsat satellite data with advanced spatiotemporal processing. Surface reflectance imagery from Landsat 5, 7, and 8 was accessed via Google Earth Engine to provide continuous coverage over 1984–2025.
 
 ## Data Processing

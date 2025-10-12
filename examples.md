@@ -4,16 +4,6 @@ title: Examples
 permalink: /examples/
 ---
 
-# Interactive Visualizations
-
-## 3D Spatiotemporal Analysis
-
-### Sant Martí District
-
-Explore the complete spatiotemporal vegetation dynamics of Sant Martí district through an interactive 3D space-time cube visualization.
-
-**[Launch Interactive Visualization](https://jannisgru.github.io/TFG/outputs/3d_spatiotemporal_Sant_Mart%C3%AD.html)**
-
 ### Sant Adrià del Besòs - Vegetation Trends
 
 Examine contrasting vegetation patterns in Sant Adrià del Besòs through specialized 3D visualizations focusing on different trend types:
@@ -37,7 +27,7 @@ Interactive analysis of areas showing vegetation recovery and growth.
 - **Cluster Selection**: Toggle individual vegetation communities
 - **View Options**: Switch between different visualization modes
 
-## Static Analysis Examples
+### El Prat de Llobregat Analysis
 
 For detailed case study results including spatial cluster maps, temporal evolution charts, and statistical comparisons, see the **[El Prat de Llobregat analysis](https://jannisgru.github.io/TFG/results/#case-study-el-prat-de-llobregat)** in the Results section.
 

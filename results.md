@@ -4,8 +4,6 @@ title: Results
 permalink: /results/
 ---
 
-# Results
-
 The spatiotemporal segmentation reveals distinct greening and browning patterns across the metropolitan area:
 
 ## Temporal Patterns
