@@ -14,19 +14,6 @@ Interactive exploration of areas experiencing vegetation decline over the study 
 **[Greening Trends Visualization](https://jannisgru.github.io/TFG/outputs/Sant_Adria_del_Besos/greening/3d_spatiotemporal_Sant_Adria_del_Besos.html)**  
 Interactive analysis of areas showing vegetation recovery and growth.
 
-**Visualization Features:**
-- 40+ years of NDVI data (1984-2025)
-- Interactive cluster exploration  
-- Temporal animation controls
-- Spatial filtering capabilities
-- Statistical overlay information
-
-**Navigation:**
-- **Mouse Controls**: Rotate, zoom, and pan through the 3D space
-- **Time Slider**: Navigate through temporal dimensions
-- **Cluster Selection**: Toggle individual vegetation communities
-- **View Options**: Switch between different visualization modes
-
 ### El Prat de Llobregat Analysis
 
 For detailed case study results including spatial cluster maps, temporal evolution charts, and statistical comparisons, see the **[El Prat de Llobregat analysis](https://jannisgru.github.io/TFG/results/#case-study-el-prat-de-llobregat)** in the Results section.
