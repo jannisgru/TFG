@@ -11,7 +11,7 @@ Examine contrasting vegetation patterns in Sant Adrià del Besòs through specia
 **[Browning Trends Visualization](https://jannisgru.github.io/TFG/outputs/Sant_Adria_del_Besos/browning/3d_spatiotemporal_Sant_Adria_del_Besos.html)**  
 Interactive exploration of areas experiencing vegetation decline over the study period.
 
-**[Greening Trends Visualization](https://jannisgru.github.io/TFG/outputs/Sant_Adria_del_Besos/greening/3d_spatiotemporal_Sant_Adria_del_Besos.html)**  
+**[Greening Trends Visualization](https://media.githubusercontent.com/media/jannisgru/TFG/refs/heads/master/outputs/Sant_Adria_del_Besos/greening/3d_spatiotemporal_Sant_Adria_del_Besos.html)**  
 Interactive analysis of areas showing vegetation recovery and growth.
 
 ### El Prat de Llobregat Analysis
