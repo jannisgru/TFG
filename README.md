@@ -1,35 +1,74 @@
 # Spatiotemporal Analysis of Vegetation Cover in Barcelona
 
-A comprehensive analysis framework for monitoring vegetation dynamics in the Barcelona Metropolitan Area using four decades of Landsat satellite data (1985-2025).
+**[View Project Documentation & Results](https://jannisgru.github.io/TFG/)**
 
-## Overview
+A comprehensive analysis framework for monitoring vegetation dynamics using Landsat satellite imagery.
 
-This research presents a unique approach to understanding urban vegetation patterns through spatiotemporal analysis of satellite time series data. The methodology combines space-time cube analysis with advanced clustering techniques to identify and track vegetation communities across temporal and spatial dimensions.
+**Academic Context**: Bachelor's thesis project - Universitat Politècnica de Catalunya
 
-**Key Features:**
-- Automated processing of 40+ years of Landsat imagery
-- Space-time cube segmentation using DBSCAN clustering
-- Interactive 3D visualizations of vegetation dynamics
-- Municipal-level vegetation trend analysis
-- Comprehensive NDVI time series analysis
+---
 
-## Methodology
+## Installation
 
-The analysis pipeline implements a three-stage approach:
+1. **Clone the repository**
+```bash
+git clone https://github.com/jannisgru/TFG.git
+cd TFG
+```
 
-1. **Data Processing**: Automated acquisition and normalization of Landsat annual composites
-2. **Spatiotemporal Segmentation**: DBSCAN-based clustering of NDVI time series with spatial constraints
-3. **Visualization**: Interactive 3D space-time cubes and statistical dashboards
+2. **Create conda environment**
+```bash
+conda env create -f environment.yml
+conda activate tfg
+```
 
-## Results & Visualizations
+3. **Install additional dependencies** (if needed)
+```bash
+pip install -r requirements.txt
+```
 
-**Interactive Examples:**
-- [3D Spatiotemporal Visualization (Sant Martí)](https://jannisgru.github.io/TFG/outputs/3d_spatiotemporal_Sant_Mart%C3%AD.html)
-- [Additional Examples](https://jannisgru.github.io/TFG/examples/) (Coming Soon)
+## Usage
 
-**Analysis Outputs:**
-- [Methodology Documentation](https://jannisgru.github.io/TFG/scripts/analysis/)
-- [Technical Implementation](https://jannisgru.github.io/TFG/technical/) (Coming Soon)
+### Data Processing Pipeline
+
+1. **Acquire satellite data** using Google Earth Engine:
+```bash
+# Copy script content to GEE Code Editor
+cat scripts/processing/landsat_data_acquisition.js
+# Run in GEE and download to data/raw/
+```
+
+2. **Create multidimensional raster**:
+```python
+python scripts/processing/create_mdim_raster.py
+```
+
+3. **Run spatiotemporal analysis**:
+```python
+python scripts/analysis/segmentation_main.py
+```
+
+### Configuration
+
+Edit `config/config.yaml` and `scripts/analysis/segment_config.yaml` to customize:
+- Study area boundaries
+- NDVI thresholds
+- Clustering parameters
+- Output formats
+
+### Visualization
+
+Generate interactive visualizations:
+```python
+# 3D space-time cubes
+python scripts/visualization/visualize_interactive.py
+
+# Statistical plots
+python scripts/visualization/municipality_ndvi_statistics.py
+
+# JSON cluster viewer
+python scripts/visualization/json_cluster_visualizer.py
+```
 
 ## Quick Start
 
@@ -57,8 +96,22 @@ python scripts/analysis/segmentation_main.py
 └── outputs/                 # Results and visualizations
 ```
 
-## Academic Context
+## Data Requirements
 
-This work was developed as part of a Bachelor's thesis at Universitat Politècnica de Catalunya, focusing on the application of space-time cube methodology for environmental monitoring in metropolitan areas.
+- **Raw Data**: Landsat annual composites (1984–2025) from Google Earth Engine
+- **Bands**: Blue, Green, Red, NIR (30m resolution)
+- **Format**: GeoTIFF files named by year (e.g., 1998.tif, 1999.tif, ...)
+- **Boundaries**: AMB administrative and municipal boundaries (Shapefile format)
 
-**Keywords:** Remote Sensing, NDVI, Space-Time Analysis, Urban Vegetation, DBSCAN Clustering
+## Key Scripts
+
+- `scripts/processing/landsat_data_acquisition.js`: Google Earth Engine data export
+- `scripts/processing/create_mdim_raster.py`: Convert GeoTIFFs to NetCDF time series
+- `scripts/analysis/segmentation_main.py`: Main clustering analysis
+- `scripts/visualization/visualize_interactive.py`: Generate 3D visualizations
+
+## Configuration Files
+
+- `config/config.yaml`: General project settings
+- `scripts/analysis/segment_config.yaml`: Clustering parameters
+- `environment.yml`: Conda environment specification
