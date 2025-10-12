@@ -30,18 +30,18 @@ The El Prat de Llobregat region (site of Barcelona's main airport) exemplifies t
 
 ### Spatial Distribution of Vegetation Clusters
 
-![Spatial Cluster Map](outputs/EL_Prat_de_Llobregat/clusters_1_5_11_12_25_28_33_39_40_spatial_map.png)
+![Spatial Cluster Map](../outputs/EL_Prat_de_Llobregat/clusters_1_5_11_12_25_28_33_39_40_spatial_map.png)
 
 Airport runways (left) are clearly distinguished from the greener Delta fields (right). The analysis confirms that infrastructure projects converted fertile land to impervious surfaces, producing persistent greenness loss around El Prat.
 
 ### Temporal Evolution Analysis
 
-![Temporal Evolution](outputs/EL_Prat_de_Llobregat/clusters_1_5_11_12_25_28_33_39_40_temporal_evolution.png)
+![Temporal Evolution](../outputs/EL_Prat_de_Llobregat/clusters_1_5_11_12_25_28_33_39_40_temporal_evolution.png)
 
 NDVI time series reveal sharp declines during major construction periods (2004, 2009) followed by stabilization. Different clusters show varying responses to infrastructure development.
 
 ### Municipal Cluster Comparison
 
-![Cluster Comparison](outputs/EL_Prat_de_Llobregat/municipality_cluster_comparison_1_5_11_12_25_28_33_39_40.png)
+![Cluster Comparison](../outputs/EL_Prat_de_Llobregat/municipality_cluster_comparison_1_5_11_12_25_28_33_39_40.png)
 
 Statistical comparison illustrating the contrast between airport/industrial areas (low, declining NDVI) and agricultural Delta lands (stable, high NDVI values).
