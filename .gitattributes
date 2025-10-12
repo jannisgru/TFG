@@ -1,3 +1,4 @@
 # Ignore language stats for /outputs
 outputs/** linguist-vendored
 outputs/** linguist-generated
+outputs/Sant_Adria_del_Besos/greening/3d_spatiotemporal_Sant_Adria_del_Besos.html filter=lfs diff=lfs merge=lfs -text
