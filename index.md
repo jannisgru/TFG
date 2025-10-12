@@ -1,10 +1,9 @@
 ---
 layout: page
-title: Home
 permalink: /
 ---
 
-# Spatiotemporal Vegetation Analysis of Barcelona Metropolitan Area
+# Spatiotemporal Analysis of Vegetation Cover in Barcelona
 
 A comprehensive analysis framework for monitoring vegetation dynamics in the Barcelona Metropolitan Area using four decades of Landsat satellite data (1985-2025).
 
@@ -12,7 +11,7 @@ A comprehensive analysis framework for monitoring vegetation dynamics in the Bar
 
 This research presents a unique approach to understanding urban vegetation patterns through spatiotemporal analysis of satellite time series data. The methodology combines space-time cube analysis with advanced clustering techniques to identify and track vegetation communities across temporal and spatial dimensions.
 
-**Key Features:**
+**Features:**
 - Automated processing of 40+ years of Landsat imagery
 - Space-time cube segmentation using DBSCAN clustering
 - Interactive 3D visualizations of vegetation dynamics
@@ -37,5 +36,3 @@ python scripts/analysis/segmentation_main.py
 ## Academic Context
 
 This work was developed as part of a Bachelor's thesis at Universitat Politècnica de Catalunya, focusing on the application of space-time cube methodology for environmental monitoring in metropolitan areas.
-
-**Keywords:** Remote Sensing, NDVI, Space-Time Analysis, Urban Vegetation, DBSCAN Clustering
