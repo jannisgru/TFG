@@ -1,59 +1,64 @@
-# Barcelona Metropolitan Area (AMB) Vegetation Analysis
+# Spatiotemporal Vegetation Analysis of Barcelona Metropolitan Area
 
-Spatiotemporal analysis of vegetation dynamics in the Barcelona Metropolitan Area using Landsat data from 1985-2025.
+A comprehensive analysis framework for monitoring vegetation dynamics in the Barcelona Metropolitan Area using four decades of Landsat satellite data (1985-2025).
+
+## Overview
+
+This research presents a unique approach to understanding urban vegetation patterns through spatiotemporal analysis of satellite time series data. The methodology combines space-time cube analysis with advanced clustering techniques to identify and track vegetation communities across temporal and spatial dimensions.
+
+**Key Features:**
+- Automated processing of 40+ years of Landsat imagery
+- Space-time cube segmentation using DBSCAN clustering
+- Interactive 3D visualizations of vegetation dynamics
+- Municipal-level vegetation trend analysis
+- Comprehensive NDVI time series analysis
+
+## Methodology
+
+The analysis pipeline implements a three-stage approach:
+
+1. **Data Processing**: Automated acquisition and normalization of Landsat annual composites
+2. **Spatiotemporal Segmentation**: DBSCAN-based clustering of NDVI time series with spatial constraints
+3. **Visualization**: Interactive 3D space-time cubes and statistical dashboards
+
+## Results & Visualizations
+
+**Interactive Examples:**
+- [3D Spatiotemporal Visualization (Sant Martí)](https://jannisgru.github.io/TFG/outputs/3d_spatiotemporal_Sant_Mart%C3%AD.html)
+- [Additional Examples](https://jannisgru.github.io/TFG/examples/) (Coming Soon)
+
+**Analysis Outputs:**
+- [Methodology Documentation](https://jannisgru.github.io/TFG/scripts/analysis/)
+- [Technical Implementation](https://jannisgru.github.io/TFG/technical/) (Coming Soon)
+
+## Quick Start
+
+```bash
+# Clone repository
+git clone https://github.com/jannisgru/TFG.git
+cd TFG
+
+# Setup environment
+conda env create -f environment.yml
+conda activate tfg
+
+# Run analysis
+python scripts/analysis/segmentation_main.py
+```
 
 ## Project Structure
 
 ```
-TFG/
-├── data/
-│   ├── raw/                 # Landsat annual composites
-│   ├── processed/           # Processed NDVI and multidimensional raster data
-│   └── boundaries/          # AMB and municipal boundaries
+├── scripts/analysis/        # Core segmentation algorithms
+├── scripts/processing/      # Data acquisition and preprocessing  
+├── scripts/visualization/   # Interactive plotting tools
+├── data/boundaries/         # Administrative boundaries
 ├── config/                  # Configuration files
-├── scripts/
-│   ├── analysis/            # Analysis of mulitidimensional raster data
-│   ├── processing/          # Data preparation and normalization
-│   └── visualization/       # 3D and dashboard visualizations
-├── outputs/                 # Analysis results, maps, dashboards
-└── logs/                    # Log files and summary statistics
+└── outputs/                 # Results and visualizations
 ```
 
-## Setup
+## Academic Context
 
-Create and activate the conda environment:
-```bash
-conda env create -f environment.yml
-conda activate tfg
-```
+This work was developed as part of a Bachelor's thesis at Universitat Politècnica de Catalunya, focusing on the application of space-time cube methodology for environmental monitoring in metropolitan areas.
 
-## Data Requirements
-
-- **Raw Data:** Landsat annual composites (1984–2025) from Google Earth Engine
-- **Bands:** Blue, Green, Red, NIR (30m resolution)
-- **Format:** GeoTIFF files named by year (e.g., 1998.tif, 1999.tif, ...)
-- **Boundaries:** AMB administrative and municipal boundaries
-
-## Data Acquisition
-
-The Google Earth Engine script for data acquisition is located in `scripts/processing/landsat_data_acquisition.js`:
-
-1. Copy the script to GEE Code Editor
-2. Run to export annual composites to Google Drive  
-3. Download files and place in `data/raw/`
-4. Files should be named: 1984.tif, 1985.tif, ..., 2025.tif
-
-## Basic Usage
-
-1. Place Landsat data in `data/raw/`
-2. Add boundary files to `data/boundaries/`
-3. Configure parameters in `config/config.yaml`
-4. Run analysis and visualization scripts from `scripts/`
-
-## Documentation
-
-- [Segmentation Module Documentation](https://jannisgru.github.io/TFG/scripts/analysis/)
-
----
-
-*Bachelor's thesis project on vegetation change detection using space-time cube methodology.*
+**Keywords:** Remote Sensing, NDVI, Space-Time Analysis, Urban Vegetation, DBSCAN Clustering
