@@ -4,37 +4,34 @@ title: Methodology
 permalink: /methodology/
 ---
 
-## Data Sources
+# Methodology
 
-**Satellite Imagery**: Landsat 5, 7, and 8 annual composites (1985-2025) acquired through Google Earth Engine. Four spectral bands (Blue, Green, Red, NIR) processed at 30-meter resolution with cloud masking and atmospheric correction applied.
+The analysis integrates multi-decadal Landsat satellite data with advanced spatiotemporal processing. Surface reflectance imagery from Landsat 5, 7, and 8 was accessed via Google Earth Engine to provide continuous coverage over 1984–2025.
+
+## Data Processing
+
+**Annual Composites**: For each year, the maximum NDVI value at each pixel was selected to form a "peak greenness" mosaic, which minimizes seasonal and cloud effects. These yearly NDVI composites were stacked into a Space–Time Cube (STC) so that each geolocated "trace" contains the full NDVI time series.
+
+**Quality Control**: Cloud masking and atmospheric correction applied to all imagery. Surface reflectance products ensure consistent radiometric calibration across the multi-sensor time series.
 
 **Study Area**: Barcelona Metropolitan Area encompassing 36 municipalities with diverse urban, suburban, and natural landscapes covering approximately 636 km².
 
-**Vegetation Index**: Normalized Difference Vegetation Index (NDVI) calculated from NIR and Red bands to quantify vegetation health and density across temporal and spatial dimensions.
-
 ## Space-Time Cube Framework
 
-The analysis employs a three-dimensional data structure where x and y coordinates represent spatial dimensions and time forms the temporal axis. Each pixel location becomes a vertical trace through time, creating a comprehensive spatiotemporal dataset.
+After assembling the STC, data cleaning removed non-vegetated or unchanging locations. Each remaining pixel's NDVI trace was then encoded as a feature vector combining its temporal NDVI values and spatial coordinates.
 
-**Trace Construction**: Individual pixel locations tracked across 40+ years, generating temporal profiles of vegetation change. Each trace contains annual NDVI values forming a time series signature.
+**Trace Construction**: Individual pixel locations tracked across 40+ years, generating temporal profiles of vegetation change. Each trace contains annual maximum NDVI values forming a time series signature.
 
-**Filtering Criteria**: Traces selected based on minimum NDVI thresholds (>0.3) and temporal variance requirements to focus analysis on areas with significant vegetation presence and dynamic behavior.
+**Filtering Criteria**: Traces selected based on minimum NDVI thresholds and temporal variance requirements to focus analysis on areas with significant vegetation presence and dynamic behavior.
 
-## Clustering Algorithm
+## Spatiotemporal Clustering
 
-**DBSCAN Implementation**: Density-based spatial clustering applied to combined temporal and spatial feature vectors. The algorithm identifies clusters of similar vegetation behavior without requiring predetermined cluster numbers.
+**DBSCAN Implementation**: Density-based clustering applied to group pixels with similar NDVI trends into spatially coherent clusters. DBSCAN was chosen because it can discover irregularly shaped clusters without predefining a number of clusters.
 
 **Feature Engineering**: Multi-dimensional vectors combining normalized NDVI time series with spatial coordinates. Temporal and spatial components weighted according to analysis requirements.
 
-**Parameters**: 
-- Epsilon (ε): Defines neighborhood radius for cluster formation
-- MinPts: Minimum points required to form dense clusters
-- Spatial constraints: Maximum distance thresholds ensure spatial coherence
+**Cluster Validation**: The resulting clusters were characterized by metrics such as spatial extent and average NDVI profile. Spatial coherence verification ensures clustered traces maintain geographic proximity within defined distance thresholds.
 
-## Validation Approach
+## Output Generation
 
-**Spatial Coherence**: Post-processing verification ensures clustered traces maintain geographic proximity within defined distance thresholds.
-
-**Temporal Consistency**: Cluster validation through statistical analysis of NDVI patterns, confirming similar vegetation dynamics within identified groups.
-
-**Municipality-Level Analysis**: Results aggregated and validated at municipal boundaries for administrative relevance and policy application.
+Final products (cluster maps and trend graphs) were exported for visualization and further analysis. Interactive 3D visualizations using Plotly enable exploration of spatiotemporal patterns, while statistical dashboards provide municipality-level insights.

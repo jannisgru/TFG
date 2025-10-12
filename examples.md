@@ -14,9 +14,19 @@ Explore the complete spatiotemporal vegetation dynamics of Sant Martí district 
 
 **[Launch Interactive Visualization](https://jannisgru.github.io/TFG/outputs/3d_spatiotemporal_Sant_Mart%C3%AD.html)**
 
-**Features:**
-- 40+ years of NDVI data (1985-2025)
-- Interactive cluster exploration
+### Sant Adrià del Besòs - Vegetation Trends
+
+Examine contrasting vegetation patterns in Sant Adrià del Besòs through specialized 3D visualizations focusing on different trend types:
+
+**[Browning Trends Visualization](https://jannisgru.github.io/TFG/outputs/Sant_Adria_del_Besos/browning/3d_spatiotemporal_Sant_Adria_del_Besos.html)**  
+Interactive exploration of areas experiencing vegetation decline over the study period.
+
+**[Greening Trends Visualization](https://jannisgru.github.io/TFG/outputs/Sant_Adria_del_Besos/greening/3d_spatiotemporal_Sant_Adria_del_Besos.html)**  
+Interactive analysis of areas showing vegetation recovery and growth.
+
+**Visualization Features:**
+- 40+ years of NDVI data (1984-2025)
+- Interactive cluster exploration  
 - Temporal animation controls
 - Spatial filtering capabilities
 - Statistical overlay information
@@ -27,6 +37,14 @@ Explore the complete spatiotemporal vegetation dynamics of Sant Martí district 
 - **Cluster Selection**: Toggle individual vegetation communities
 - **View Options**: Switch between different visualization modes
 
+## Static Analysis Examples
+
+For detailed case study results including spatial cluster maps, temporal evolution charts, and statistical comparisons, see the **[El Prat de Llobregat analysis](https://jannisgru.github.io/TFG/results/#case-study-el-prat-de-llobregat)** in the Results section.
+
+## Additional Case Studies
+
+Other case examples include clusters in the Collserola Park (stable high NDVI) and downtown Barcelona (modest greening due to urban trees), illustrating how local land use changes drive the observed greening/browning patterns across the metropolitan area.
+
 ---
 
-*Additional interactive examples and analysis visualizations will be made available in this section.*
+*Additional interactive examples and detailed case study visualizations are available upon request.*
