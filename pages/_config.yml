@@ -15,6 +15,3 @@ plugins:
 # Site settings
 url: "https://jannisgru.github.io"
 baseurl: "/TFG"
-
-# Show excerpts on homepage
-show_excerpts: true
